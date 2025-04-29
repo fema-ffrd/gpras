@@ -4,38 +4,51 @@ Welcome to the `gpras` team! We welcome any and all collaboration that meets out
 
 ## How you can contribute
 
-1. Report bugs
-   - When you identify a bug, search the issues page to see if it has already been reported
-   - If not, create a new issue and describe the bug.  Be sure to include
-     - A clear and descriptive title.
-     - Steps to reproduce the bug.
-     - Expected vs observed behavior.
-     - Proposed solutions (if you have any).
-     - Labels (bug, enhancement, high priority, etc.).
-2. Feature adds
-   - When you identify a potential new feature or enhancement, search the issues page to see if it has already been proposed
-   - If not, create a new issue and describe the idea.  Be sure to include
-     - A clear and descriptive title.
-     - A detailed description of the proposed improvement.
-     - A reference to any relevant bugs.
-3. Code changes
-   - We welcome contributions to this codebase. Members of the FEMA-FFRD organization may create new branches within this repository, and outside organizations may fork this repository to create new branches. Make sure to follow the branching strategy below! Once a feature or bugfix branch has been created, please take the following steps.
-   - Ensure your code has passed the pre-commit checks, including
-     - Are you following [PEP 8](https://peps.python.org/pep-0008/)?
-     - Do all functions have docstrings?
-     - Is type-hinting used throughout?
-     - Has black formatting been applied?
-   - Ensure all tests are passing (run `pytest`).
-   - Ensure no files or print statements have been committed accidentally.
-   - Ensure any required dependancies have been added to pyproject.toml.
-   - Submit a pull-request.  Be sure to fill out the pull-request template.
-   - If you have a reviewer in mind, assign the PR to them.
-   - Respond to all reviewer comments and update code accordingly.
+<details>
+<summary>Report bugs</summary>
+<br>
+
+- When you identify a bug, search the issues page to see if it has already been reported
+- If not, create a new issue and describe the bug.  Be sure to include
+   - A clear and descriptive title.
+   - Steps to reproduce the bug.
+   - Expected vs observed behavior.
+   - Proposed solutions (if you have any).
+   - Labels (bug, enhancement, high priority, etc.).
+</details>
+<details>
+<summary>Feature adds</summary>
+<br>
+
+- When you identify a potential new feature or enhancement, search the issues page to see if it has already been proposed
+- If not, create a new issue and describe the idea.  Be sure to include
+   - A clear and descriptive title.
+   - A detailed description of the proposed improvement.
+   - A reference to any relevant bugs.
+</details>
+<details>
+<summary>Code changes</summary>
+<br>
+
+We welcome contributions to this codebase. Members of the FEMA-FFRD organization may create new branches within this repository, and outside organizations may fork this repository to create new branches. Make sure to follow the branching strategy below! Once a feature or bugfix branch has been created, please take the following steps.
+
+- Ensure your code has passed the pre-commit checks, including
+   - Are you following [PEP 8](https://peps.python.org/pep-0008/)?
+   - Do all functions have docstrings?
+   - Is type-hinting used throughout?
+   - Has black formatting been applied?
+- Ensure all tests are passing (run `pytest`).
+- Ensure no files or print statements have been committed accidentally.
+- Ensure any required dependancies have been added to pyproject.toml.
+- Submit a pull-request.  Be sure to fill out the pull-request template.
+- If you have a reviewer in mind, assign the PR to them.
+- Respond to all reviewer comments and update code accordingly.
+</details>
 
 ## Branching Strategy
 
 ## Summary
-![branching_strategy](./images/branching_strategy.png)
+<img src="./images/branching_strategy.png" alt="branching_strategy" width="600"/>
 
 ## Branching process
 
