@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpras"
+dynamic = ["version"]
+description = "Gaussian process emulation of USACE HEC-RAS"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name = "Scott Lawson", email = "klawson@dewberry.com" },
+  { name = "Ricky Passarelli", email = "Richard.Passarelli@atkinsrealis.com" },
+  { name = "Rosemary Cyriac", email = "Rosemary.Cyriac@atkinsrealis.com" },
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "black",
+  "ruff",
+  "mypy",
+  "pre-commit",
+  "pytest",
+  "ipykernel"
+]
+
+[project.urls]
+Homepage = "https://github.com/fema-ffrd/gpras"
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+select = ["E", "F", "I", "N", "D", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]  # ignore long lines if needed
+exclude = ["build", "dist", ".venv"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.setuptools.dynamic]
+version = {attr = "gpras.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gpras*"]
