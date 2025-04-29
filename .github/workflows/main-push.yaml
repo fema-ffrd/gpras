@@ -29,7 +29,7 @@ jobs:
         id: get_version
         shell: pwsh
         run: |
-          $version = python -c "import hecsgprastac; print(gpras.__version__);"
+          $version = python -c "import gpras; print(gpras.__version__);"
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
   docker-build-push:
