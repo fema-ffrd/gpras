@@ -22,7 +22,8 @@ dev = [
   "mypy",
   "pre-commit",
   "pytest",
-  "ipykernel"
+  "ipykernel",
+  "matplotlib"
 ]
 
 [project.urls]
