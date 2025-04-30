@@ -13,7 +13,10 @@ authors = [
   { name = "Ricky Passarelli", email = "Richard.Passarelli@atkinsrealis.com" },
   { name = "Rosemary Cyriac", email = "Rosemary.Cyriac@atkinsrealis.com" },
 ]
-dependencies = []
+dependencies = [
+  "numpy",
+  "rasterio"
+]
 
 [project.optional-dependencies]
 dev = [
