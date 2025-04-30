@@ -14,14 +14,12 @@
                 "esbenp.prettier-vscode",
                 "ms-python.black-formatter",
                 "yy0931.vscode-sqlite3-editor",
-                "ms-azuretools.vscode-docker"
+                "ms-azuretools.vscode-docker",
+                "ms-toolsai.jupyter"
             ]
         }
     },
-    // "mounts": [
-    //     "source=${localWorkspaceFolder}/,target=/workspace,type=bind,consistency=cached"
-    // ],
     // avoid dubious ownership of the workspace folder https://www.kenmuse.com/blog/avoiding-dubious-ownership-in-dev-containers/
     "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
-    "postCreateCommand": "pre-commit install && chown -R root:root ${containerWorkspaceFolder}"
+    "postCreateCommand": "pre-commit install"
 }
