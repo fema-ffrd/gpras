@@ -49,9 +49,7 @@ class TrainingData:
     def inputs(self) -> np.ndarray:
         """Input features for GPR training."""
         all_data = []
-        x_space = np.linspace(
-            0, 1, self.elevation_grid.shape[0], endpoint=True
-        )  # Normalized x and y
+        x_space = np.linspace(0, 1, self.elevation_grid.shape[0], endpoint=True)  # Normalized x and y
         y_space = np.linspace(0, 1, self.elevation_grid.shape[1], endpoint=True)
         x, y = np.meshgrid(x_space, y_space)
         for d in self.depth_grids:
@@ -70,6 +68,7 @@ class TrainingData:
     def outputs(self) -> np.ndarray:
         """Output targets for GPR training."""
         # TODO: Implement this
+        return
 
 
 @dataclass
@@ -84,9 +83,7 @@ class ToyTrainingData(TrainingData):
         """Numpy arrays for each depth grid."""
         out_dict = {}
         for i in range(2):
-            out_dict[f"{i}.tif"] = self.elevation_grid + (
-                i * 10
-            )  # Constant depth for each grid
+            out_dict[f"{i}.tif"] = self.elevation_grid + (i * 10)  # Constant depth for each grid
         return out_dict
 
     @cached_property
