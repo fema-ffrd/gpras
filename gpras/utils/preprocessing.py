@@ -3,8 +3,10 @@
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import cast
 
 import numpy as np
+from numpy.typing import NDArray
 
 from gpras.consts import DEPTH_DIR_SUBPATH
 from gpras.utils.common import load_raster
@@ -36,17 +38,17 @@ class TrainingData:
         return str(Path(self.data_dir) / DEPTH_DIR_SUBPATH)
 
     @cached_property
-    def depth_grids(self) -> dict[str, np.ndarray]:
+    def depth_grids(self) -> dict[str, NDArray[np.number]]:
         """Numpy arrays for each depth grid."""
         return {i: load_raster(i) for i in self._depth_grid_paths}
 
     @cached_property
-    def elevation_grid(self) -> np.ndarray:
+    def elevation_grid(self) -> NDArray[np.number]:
         """Numpy array for the DEM."""
         return load_raster(self._dem_path)
 
     @property
-    def inputs(self) -> np.ndarray:
+    def inputs(self) -> NDArray[np.number]:
         """Input features for GPR training."""
         all_data = []
         x_space = np.linspace(0, 1, self.elevation_grid.shape[0], endpoint=True)  # Normalized x and y
@@ -65,7 +67,7 @@ class TrainingData:
         return np.concatenate(all_data, axis=0)
 
     @property
-    def outputs(self) -> np.ndarray:
+    def outputs(self) -> None:
         """Output targets for GPR training."""
         # TODO: Implement this
         return
@@ -79,7 +81,7 @@ class ToyTrainingData(TrainingData):
     resolution: int = 10000
 
     @cached_property
-    def depth_grids(self) -> dict[str, np.ndarray]:
+    def depth_grids(self) -> dict[str, NDArray[np.number]]:
         """Numpy arrays for each depth grid."""
         out_dict = {}
         for i in range(2):
@@ -87,11 +89,11 @@ class ToyTrainingData(TrainingData):
         return out_dict
 
     @cached_property
-    def elevation_grid(self) -> np.ndarray:
+    def elevation_grid(self) -> NDArray[np.number]:
         """Numpy array for the DEM."""
         x_space = np.linspace(0, 1, self.resolution, endpoint=True)
         y_space = np.linspace(0, 1, self.resolution, endpoint=True)
         x, y = np.meshgrid(x_space, y_space)
         d = np.max(np.stack([x, y]), axis=0)
         noise = (np.sin(x * 3 * np.pi) + np.sin(y * 5 * np.pi)) / 10
-        return d + noise
+        return cast(NDArray[np.number], d + noise)
