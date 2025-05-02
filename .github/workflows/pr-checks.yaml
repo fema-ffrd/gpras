@@ -31,7 +31,7 @@ jobs:
         python-version: 3.12
     - name: Install Dependencies
       run: |
-        pip install .
+        pip install .[dev]
     - name: Run mypy
       run: |
         MYPYPATH=gpras mypy --disallow-untyped-defs gpras
