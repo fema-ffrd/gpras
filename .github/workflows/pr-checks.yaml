@@ -15,9 +15,10 @@ jobs:
   ruff-lint:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: astral-sh/ruff-action@v3
       - name: Ruff linting
-      - run: ruff format --check
+        run: ruff format --check
 
   mypy-type-check:
     runs-on: ubuntu-latest
