@@ -3,10 +3,9 @@ name: PR Checks
 on:
   pull_request:
     branches: [ "main", "dev" ]
-    paths:
-      - 'gpras/**'
-      - 'Dockerfile'
-      - '.dockerignore'
+
+  workflow_dispatch:
+
 
 permissions:
   contents: read
@@ -18,7 +17,7 @@ jobs:
     steps:
       - uses: astral-sh/ruff-action@v3
       - name: Ruff linting
-      - run: ruff check --fix
+      - run: ruff format --check
 
   mypy-type-check:
     runs-on: ubuntu-latest
