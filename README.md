@@ -26,7 +26,8 @@ The surrogate models are trained to reproduce the outputs of a high-resolution "
 
 ## Installation
 
-To use this software, please use either the [Devcontainer](./Devcontainer) or clone this repo and install with pip
+To use this software, please use either the [devcontainer](./devcontainer/devcontainer.json) or clone this repo and install with pip.
+
 
 ```bash
 git clone https://github.com/fema-ffrd/gpras.git
