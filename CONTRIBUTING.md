@@ -48,7 +48,9 @@ We welcome contributions to this codebase. Members of the FEMA-FFRD organization
 ## Branching Strategy
 
 ## Summary
-<img src="./images/branching_strategy.png" alt="branching_strategy" width="600"/>
+<div align='center'>
+   <img src="./images/branching_strategy.png" alt="branching_strategy" width="600"/>
+</div>
 
 ## Branching process
 
