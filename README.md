@@ -14,11 +14,19 @@ HEC-RAS is a widely used tool for modeling river hydraulics and flood events; ho
 
 The surrogate models are trained to reproduce the outputs of a high-resolution "benchmark" model that must be developed by the user beforehand. Parameters of the GPR surrogate are optimized to predict the benchmark flooding given a set of input features relating to either the benchmark model forcing or outputs from a lower-fidelity HEC-RAS model. A graphical summary of the training and predicting process is shown in the image below.
 
+### Model Training and Validation
+<img src="./images/process_1.png" alt="training_testing" width="600"/>
 
+### Model Data Layout
+<img src="./images/data_structures.png" alt="data_layout" width="600"/>
 
 ## Installation
 
 To use this software, please use either the [Devcontainer](./Devcontainer) or clone this repo and install with pip
+
+```bash
+git clone https://github.com/fema-ffrd/gpras.git
+```
 
 ```bash
 pip install .
