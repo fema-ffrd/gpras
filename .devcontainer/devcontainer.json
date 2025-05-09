@@ -16,7 +16,23 @@
                 "yy0931.vscode-sqlite3-editor",
                 "ms-azuretools.vscode-docker",
                 "ms-toolsai.jupyter"
-            ]
+            ],
+            "settings": {
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.black-formatter",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.organizeImports": "explicit",
+                        "source.fixAll": "explicit"
+                        }
+                    },
+                "editor.rulers": [
+                    88
+                ]
+            },
+            "ruff.importStrategy": "fromEnvironment",
+            "ruff.lint.enable": true,
+            "ruff.showSyntaxErrors": true
         }
     },
     // avoid dubious ownership of the workspace folder https://www.kenmuse.com/blog/avoiding-dubious-ownership-in-dev-containers/
