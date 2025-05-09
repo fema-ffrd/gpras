@@ -1,4 +1,4 @@
-FROM pytorch/pytorch AS base
+FROM tensorflow/tensorflow:latest-jupyter AS base
 
 WORKDIR /workspace
 

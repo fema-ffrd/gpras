@@ -13,7 +13,10 @@ authors = [
   { name = "Ricky Passarelli", email = "Richard.Passarelli@atkinsrealis.com" },
   { name = "Rosemary Cyriac", email = "Rosemary.Cyriac@atkinsrealis.com" },
 ]
-dependencies = []
+dependencies = [
+  "gpflow==2.9.2",
+  "rashdf==0.7.2"
+]
 
 [project.optional-dependencies]
 dev = [
