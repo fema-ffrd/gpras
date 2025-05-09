@@ -15,7 +15,8 @@ authors = [
 ]
 dependencies = [
   "gpflow==2.9.2",
-  "rashdf==0.7.2"
+  "rashdf==0.7.1",
+  "hecstac==0.2.0"
 ]
 
 [project.optional-dependencies]
@@ -47,6 +48,7 @@ exclude = ["build", "dist", ".venv", "experiments"]
 python_version = "3.12"
 strict = true
 disallow_untyped_defs = true
+ignore_missing_imports = true
 exclude = "experiments"
 
 [tool.setuptools.dynamic]
