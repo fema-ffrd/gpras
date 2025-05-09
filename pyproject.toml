@@ -41,11 +41,13 @@ line-length = 88
 target-version = "py312"
 lint.select = ["E", "F", "I", "N", "D", "UP", "B", "C4", "SIM"]
 lint.ignore = ["E501", "D203", "D212"]  # ignore long lines if needed
-exclude = ["build", "dist", ".venv"]
+exclude = ["build", "dist", ".venv", "experiments"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+disallow_untyped_defs = true
+exclude = "experiments"
 
 [tool.setuptools.dynamic]
 version = {attr = "gpras.__version__"}
