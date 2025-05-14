@@ -16,6 +16,8 @@ def test_ras_plan_hdf() -> None:
         for j in meshes:
             summary = plan.wsel_timeseries(j[0])
             assert summary is not None
+            min_el = plan.mesh_min_el(j[0])
+            assert min_el is not None
 
 
 def test_ras_geom_hdf() -> None:

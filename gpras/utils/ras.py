@@ -21,6 +21,12 @@ class RasPlan(RasPlanHdf):  # type: ignore[misc]
         """2D flow area names within the plan."""
         return [i[0] for i in self._2d_flow_area_names_and_counts()]
 
+    def mesh_min_el(self, mesh_id: str) -> NDArray[np.float64]:
+        """Get an array of all cell's min elevation."""
+        path = f"Geometry/2D Flow Areas/{mesh_id}/Cells Minimum Elevation"
+        els = self.get(path)[:]
+        return els[~np.isnan(els)]
+
     def wsel_timeseries(self, mesh_id: str) -> NDArray[np.float64]:
         """Get timeseries of water surface elevation for all cells."""
         ts = self._mesh_timeseries_outputs(mesh_id, TimeSeriesOutputVar)
