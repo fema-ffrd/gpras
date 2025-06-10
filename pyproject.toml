@@ -15,7 +15,8 @@ authors = [
 ]
 dependencies = [
   "gpflow==2.9.2",
-  "rashdf==0.7.2"
+  "rashdf==0.7.2",
+  "hecstac==0.2.0"
 ]
 
 [project.optional-dependencies]
@@ -33,20 +34,21 @@ dev = [
 Homepage = "https://github.com/fema-ffrd/gpras"
 
 [tool.black]
-line-length = 88
+line-length = 120
 target-version = ['py312']
 
 [tool.ruff]
-line-length = 88
+line-length = 120
 target-version = "py312"
 lint.select = ["E", "F", "I", "N", "D", "UP", "B", "C4", "SIM"]
-lint.ignore = ["E501", "D203", "D212"]  # ignore long lines if needed
+lint.ignore = ["E501", "D203", "D213"]  # ignore long lines if needed
 exclude = ["build", "dist", ".venv", "experiments"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 disallow_untyped_defs = true
+ignore_missing_imports = true
 exclude = "experiments"
 
 [tool.setuptools.dynamic]
