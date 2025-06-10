@@ -1,0 +1,52 @@
+{
+    "type": "Feature",
+    "stac_version": "1.1.0",
+    "stac_extensions": [],
+    "id": "HF",
+    "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [
+                    0.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.0
+                ]
+            ]
+        ]
+    },
+    "bbox": [
+        0.0,
+        0.0,
+        1.0,
+        1.0
+    ],
+    "properties": {
+        "project_file_name": "HF",
+        "HEC-RAS:datetime_source": "processing_time",
+        "datetime": "2025-06-05T19:08:46.260761Z"
+    },
+    "links": [
+        {
+            "rel": "self",
+            "href": "/workspaces/gpras/data/Muncie/Muncie.prj.json",
+            "type": "application/json"
+        }
+    ],
+    "assets": {}
+}

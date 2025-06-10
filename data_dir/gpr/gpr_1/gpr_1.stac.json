@@ -1,0 +1,121 @@
+{
+    "type": "Feature",
+    "stac_version": "1.1.0",
+    "stac_extensions": [],
+    "id": "GPR_A",
+    "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [
+                    -105.0,
+                    39.95
+                ],
+                [
+                    -104.95,
+                    39.95
+                ],
+                [
+                    -104.95,
+                    40.0
+                ],
+                [
+                    -105.0,
+                    40.0
+                ],
+                [
+                    -105.0,
+                    39.95
+                ]
+            ]
+        ]
+    },
+    "bbox": [
+        -105.0,
+        39.95,
+        -104.95,
+        40.0
+    ],
+    "properties": {
+        "start_datetime": "2000-01-01T00:00:00",
+        "end_datetime": "2000-12-31T00:00:00",
+        "model_type": "approach_1",
+        "scaling_method": "standard",
+        "eof_mode_count": 10,
+        "inducing_fraction": 0.2,
+        "kernel": {
+            "type": "rbf",
+            "parameters": {
+                "length": 2
+            }
+        },
+        "gpflow_parameters": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        },
+        "training_runs": [
+            "run_0",
+            "run_1"
+        ],
+        "testing_runs": [
+            "run_2"
+        ],
+        "validation_runs": [
+            "run_3"
+        ],
+        "datetime": null
+    },
+    "links": [],
+    "assets": {
+        "hf_model": {
+            "href": "s3://bucket/ras_models/hf/hf.stac.json",
+            "type": "STAC",
+            "roles": [
+                "metadata"
+            ]
+        },
+        "lf_model": {
+            "href": "s3://bucket/ras_models/lf/lf.stac.json",
+            "type": "STAC",
+            "roles": [
+                "metadata"
+            ]
+        },
+        "gpflow_file_f1": {
+            "href": "s3://bucket/gpr/gpr_1/model_files/f1.file",
+            "type": "???",
+            "roles": [
+                "???"
+            ]
+        },
+        "gpr.p00.hdf": {
+            "href": "s3://bucket/gpr/gpr_1/gpr.p00.hdf",
+            "type": "application/x.hec-ras-hdf",
+            "roles": [
+                "outputs"
+            ]
+        },
+        "gpr.p01.hdf": {
+            "href": "s3://bucket/gpr/gpr_1/gpr.p01.hdf",
+            "type": "application/x.hec-ras-hdf",
+            "roles": [
+                "outputs"
+            ]
+        },
+        "gpr.p02.hdf": {
+            "href": "s3://bucket/gpr/gpr_1/gpr.p02.hdf",
+            "type": "application/x.hec-ras-hdf",
+            "roles": [
+                "outputs"
+            ]
+        },
+        "gpr.p03.hdf": {
+            "href": "s3://bucket/gpr/gpr_1/gpr.p03.hdf",
+            "type": "application/x.hec-ras-hdf",
+            "roles": [
+                "outputs"
+            ]
+        }
+    }
+}

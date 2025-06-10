@@ -1,0 +1,79 @@
+{
+    "type": "Feature",
+    "stac_version": "1.1.0",
+    "stac_extensions": [],
+    "id": "GPR_events",
+    "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [
+                    -105.1,
+                    39.9
+                ],
+                [
+                    -104.9,
+                    39.9
+                ],
+                [
+                    -104.9,
+                    40.1
+                ],
+                [
+                    -105.1,
+                    40.1
+                ],
+                [
+                    -105.1,
+                    39.9
+                ]
+            ]
+        ]
+    },
+    "bbox": [
+        -105.1,
+        39.9,
+        -104.9,
+        40.1
+    ],
+    "properties": {
+        "start_datetime": "2000-01-01T00:00:00",
+        "end_datetime": "2000-12-31T00:00:00",
+        "source_event_count": 3,
+        "target_event_count": 2,
+        "datetime": null
+    },
+    "links": [],
+    "assets": {
+        "0": {
+            "href": "s3://bucket/dss_data/0.dss",
+            "type": "application/x.hec-dss",
+            "avg_precip_in": 1,
+            "recurrence_interval": 100,
+            "in_subset": true,
+            "roles": [
+                "data"
+            ]
+        },
+        "1": {
+            "href": "s3://bucket/dss_data/1.dss",
+            "type": "application/x.hec-dss",
+            "avg_precip_in": 1,
+            "recurrence_interval": 100,
+            "in_subset": false,
+            "roles": [
+                "data"
+            ]
+        },
+        "2": {
+            "href": "s3://bucket/dss_data/2.dss",
+            "type": "application/x.hec-dss",
+            "avg_precip_in": 1,
+            "recurrence_interval": 100,
+            "in_subset": true,
+            "roles": [
+                "data"
+            ]
+        }
+    }
+}
