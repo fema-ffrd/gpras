@@ -10,7 +10,8 @@ import numpy as np
 from hecdss import HecDss
 from numpy.typing import NDArray
 
-from gpras.ras import EventCondition, FlowHydrographBC, PrecipitationBC, RasModel
+from gpras.ras.model import RasModel
+from gpras.ras.plan import EventCondition, FlowHydrographBC, PrecipitationBC
 from gpras.utils.s3_utils import s3_2_file
 
 PRECIP_HDF_PATH = "/Event Conditions/Meteorology/Precipitation/Values"
