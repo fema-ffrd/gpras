@@ -5,13 +5,9 @@ from typing import Any, TypeVar
 
 import h5py
 import numpy as np
-from hecstac.ras.assets import GenericAsset
 from numpy.typing import NDArray
 
-from gpras.utils.file_utils import detect_file_properties
-
 FloatType = TypeVar("FloatType", bound=np.floating[Any])
-GenAsset = TypeVar("GenAsset", bound=GenericAsset)
 
 
 @dataclass
@@ -78,33 +74,7 @@ def update_hdf_attributes(hdf_path: str, attr_path: str, attrs: dict[str, str]) 
 def update_hdf_data(hdf_path: str, data_path: str, data: NDArray[np.float32]) -> None:
     """Overwrite data in an hdf file."""
     with h5py.File(hdf_path, "a") as f:
-        # d = f[data_path]
-        # d[:] = data
+
         print(f"deleting {data_path}")
         del f[data_path]
         f.create_dataset(data_path, data=data)
-
-
-def update_text_attributes(txt_path: str, attrs: dict[str, str]) -> None:
-    """Update an attribute in a ras text file."""
-    encoding, newline = detect_file_properties(txt_path)
-    with open(txt_path, encoding=encoding) as f:
-        lines = f.readlines()
-    for ind, i in enumerate(lines):
-        splitted = i.split("=")
-        if splitted[0] in attrs:
-            splitted[-1] = attrs[splitted[0]] + "\n"
-            lines[ind] = "=".join(splitted)
-    with open(txt_path, mode="w", encoding=encoding, newline=newline) as f:
-        f.writelines(lines)
-
-
-def add_plan_to_text_file(txt_path: str, plan_suffix: str) -> None:
-    """Add a plan suffix to a project file."""
-    encoding, newline = detect_file_properties(txt_path)
-    with open(txt_path, encoding=encoding) as f:
-        lines = f.readlines()
-    last_index = max((ind for ind, line in enumerate(lines) if line.startswith("Plan File")), default=len(lines))
-    lines.insert(last_index + 1, f"Plan File={plan_suffix}\n")
-    with open(txt_path, mode="w", encoding=encoding, newline=newline) as f:
-        f.writelines(lines)
