@@ -1,20 +1,20 @@
 """HEC-RAS model class and associated functions."""
 
 import shutil
-from typing import Any
+from typing import Any, TypeVar
 
+from hecstac.ras.assets import GenericAsset
 from hecstac.ras.item import RASModelItem
 from pystac import Asset
 
 from gpras.ras.plan import (
     BoundaryType,
-    GenAsset,
-    add_plan_to_text_file,
     update_hdf_attributes,
     update_hdf_data,
-    update_text_attributes,
 )
-from gpras.utils.file_utils import get_filename
+from gpras.utils.file_utils import detect_file_properties, get_filename
+
+GenAsset = TypeVar("GenAsset", bound=GenericAsset)
 
 
 class RasModel(RASModelItem):  # type: ignore[misc]
@@ -40,7 +40,7 @@ class RasModel(RASModelItem):  # type: ignore[misc]
         update_text_attributes(dst_txt_path, plan_attrs["txt"])
 
         # Update project file
-        add_plan_to_text_file(self.pf.fpath, dst_txt_path.split(".")[-1])
+        add_file_to_prj_file(self.pf.fpath, dst_txt_path.split(".")[-1])
 
         # Write data
         for i in boundary_conditions:
@@ -60,3 +60,30 @@ class RasModel(RASModelItem):  # type: ignore[misc]
         max_suffix = f"p{str(max_plan_ind).zfill(2)}"
         new_suffix = f"p{str(new_plan_ind).zfill(2)}"
         return suffixes[max_plan_ind].replace(max_suffix, new_suffix)
+
+
+def add_file_to_prj_file(prj_path: str, file_row: str) -> None:
+    """Add a plan suffix to a project file."""
+    encoding, newline = detect_file_properties(prj_path)
+    with open(prj_path, encoding=encoding) as f:
+        lines = f.readlines()
+    key = file_row.split("=")[0]
+    last_index = max((ind for ind, line in enumerate(lines) if line.startswith(key)), default=len(lines))
+    lines.insert(last_index + 1, file_row + "\n")
+    with open(prj_path, mode="w", encoding=encoding, newline=newline) as f:
+        f.writelines(lines)
+
+
+def update_text_attributes(txt_path: str, attrs: dict[str, str]) -> None:
+    """Update an attribute in a ras text file."""
+    encoding, newline = detect_file_properties(txt_path)
+    with open(txt_path, encoding=encoding) as f:
+        lines = f.readlines()
+    for ind, i in enumerate(lines):
+        splitted = i.split("=")
+        key = "=".join(splitted[:-1])
+        if key in attrs:
+            splitted[-1] = attrs[key] + "\n"
+            lines[ind] = "=".join(splitted)
+    with open(txt_path, mode="w", encoding=encoding, newline=newline) as f:
+        f.writelines(lines)
