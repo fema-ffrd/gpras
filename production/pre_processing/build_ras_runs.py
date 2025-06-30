@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
@@ -12,6 +13,7 @@ from numpy.typing import NDArray
 
 from gpras.ras.model import RasModel
 from gpras.ras.plan import EventCondition, FlowHydrographBC, PrecipitationBC
+from gpras.utils.file_utils import hdf_2_dss_grid
 from gpras.utils.s3_utils import s3_2_file
 
 PRECIP_HDF_PATH = "/Event Conditions/Meteorology/Precipitation/Values"
@@ -42,7 +44,7 @@ def get_dss_data(dss_path: str, parameter: str, element_ids: list[str]) -> dict[
 
 def get_hdf_precipitation(hdf_path: str) -> NDArray[np.float32]:
     """Load hdf data for precipitation."""
-    with NamedTemporaryFile(suffix=".dss") as tmp_dss:
+    with NamedTemporaryFile(suffix=".hdf") as tmp_dss:
         local_dss = tmp_dss.name
         s3_2_file(hdf_path, local_dss)
         tmp_dss.seek(0)
@@ -105,11 +107,39 @@ def make_attribute_dict(plan_id: str, boundary_conditions: list[EventCondition])
     return plan_dict
 
 
-def build_runs(event_list: list[dict[str, str]], ras_model: RasModel, template_run: str) -> None:
+def copy_hms_data(event: dict[str, str], ras_prj_path: str, template_precip_dss: str) -> dict[str, str]:
+    """Copy hms data from s3 to local."""
+    # Define directory
+    dss_dir = Path(ras_prj_path).parent / "dss"
+    dss_dir.mkdir(exist_ok=True)
+    baseflows_path = dss_dir / "flow_base" / f"flow_base_{event['id']}.dss"
+    precip_path = dss_dir / "precip" / f"precip_{event['id']}.dss"
+    # Move files
+    s3_2_file(event["dss"], str(baseflows_path))
+    with NamedTemporaryFile(suffix=".hdf") as tmp_hdf:
+        local_hdf = tmp_hdf.name
+        s3_2_file(event["hdf"], local_hdf)
+        tmp_hdf.seek(0)
+        hdf_2_dss_grid(local_hdf, template_precip_dss, PRECIP_HDF_PATH, str(precip_path))
+    # Update event metadata
+    event["baseflow_dss"] = str(baseflows_path)
+    event["precip_dss"] = str(precip_path)
+    return event
+
+
+def build_runs(event_list: list[dict[str, str]], ras_model: RasModel, geometry_suffix: str) -> None:
     """Build new ras runs from a list of events."""
     for ind, event in enumerate(event_list):
         try:
-            print(f"Building event for gpr{ind}")
+            print(f"Building event for {event['id']}")
+            # Make a new flow file
+            # flow_suffix = generate_flow_file(ras_model, geometry_suffix, event["id"])
+
+            # Make a new plan file
+            # generate_plan_file(ras_model, geometry_suffix, flow_suffix, event["id"])
+
+            # Update flow file
+
             bcs = build_boundary_conditions(ras_model, template_run, event["dss"], event["hdf"])
             attrs = make_attribute_dict(f"gpr{ind}", bcs)
             ras_model.make_new_plan(template_run, attrs, bcs)
@@ -125,6 +155,8 @@ if __name__ == "__main__":
     event_path = "data/events.json"
     ras_path = "data/bridgeport/bridgeport.stac.json"
     template_run = "bridgeport.p01.hdf"
+    geom_file = "g01"
+    template_precip_dss = ""
     if not os.path.exists(ras_path):
         rm = RasModel.from_prj(ras_path.replace("stac.json", ".prj"))
         with open(ras_path, mode="w") as f:
@@ -132,5 +164,7 @@ if __name__ == "__main__":
     with open(event_path) as f:
         events = json.load(f)
     with open(ras_path) as f:
-        rm = RasModel.from_dict(json.load(f))
-    build_runs(events, rm, template_run)
+        ras_model = RasModel.from_dict(json.load(f))
+    for ind, event in enumerate(events):
+        events[ind] = copy_hms_data(event, ras_model.self_href, template_precip_dss)
+    build_runs(events, ras_model, geom_file)
