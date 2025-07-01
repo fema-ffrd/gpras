@@ -342,17 +342,16 @@ class GPRAS:
         return all_runs
 
     @cached_property
-    def cell_area_weights(self) -> tuple[dict[int, float], gpd.GeoDataFrame]:
+    def cell_area_weights(self) -> dict[int, float]:
         """Cached property that computes cell areas as weights.
 
         Returns:
             - A dictionary mapping cell IDs to surface area (used as weights).
-            - A GeoDataFrame with cell_id, area, and geometry (useful for plotting).
 
-        Only computed if `use_cell_weights` is enabled.
+        Only computed if `enable_cell_weighting` is enabled.
         """
-        if not getattr(self, "use_cell_weights", False):
-            return {}, gpd.GeoDataFrame()
+        if not getattr(self, "enable_cell_weighting", False):
+            return {}
 
         geometry_title = self.hf_geometry_title
 
@@ -371,13 +370,7 @@ class GPRAS:
         areas = mesh_hdf["Cells Surface Area"][()]
         area_dict = dict(enumerate(areas))
 
-        # Get cell polygons from ras_geom
-        gdf = ras_geom.mesh_cell_polygons()
-        gdf = gdf[gdf["mesh_name"] == self.hf_mesh_id].copy()
-        gdf = gdf.set_index("cell_id")
-        gdf["area"] = areas  # assumes alignment between order of polygons and area array
-
-        return area_dict, gdf
+        return area_dict
 
     def generate_kfold_splits(
         self, run_ids: list[str], n_splits: int, shuffle: bool, random_state: int
@@ -901,40 +894,6 @@ class RasEmulator(GPRAS):
 
         return np.where(data > threshold, data, replacement)
 
-    def center_and_weight_lf_data(
-        self,
-        data: np.ndarray,
-        hf_temporal_mean: np.ndarray,
-        wet_indices: list[int],
-        weights: np.ndarray = None,
-    ) -> np.ndarray:
-        """Center and apply weights to LF WSE data using HF mean and optional cell weights.
-
-        Parameters:
-            data (np.ndarray): LF WSE data (timesteps × all HF cells).
-            hf_temporal_mean (np.ndarray): HF temporal mean values for wet cells (length: num_wet_cells).
-            wet_indices (list[int]): Indices of wet HF cells to subset data and mean.
-            weights [np.ndarray]: Weights (e.g., cell areas) for wet cells.
-
-        Returns:
-            np.ndarray: Centered and weighted LF data (timesteps × num_wet_cells).
-        """
-        # if data.shape[1] < max(wet_indices) + 1:
-        #    raise ValueError("Input LF data does not have enough columns to match wet_indices.")
-
-        # data_wet = data[:, wet_indices]
-        data_wet = data
-        centered = data_wet - hf_temporal_mean
-
-        if weights is not None:
-            if len(weights) != len(wet_indices):
-                raise ValueError("Weights length must match number of wet indices.")
-            centered_weighted = centered * weights
-        else:
-            centered_weighted = centered
-
-        return centered_weighted
-
     def derive_lf_ecs_from_hf_eof(self, fold_name: str) -> np.ndarray:
         """Derive low-fidelity expansion coefficients (ECs) using HF EOFs for a given fold.
 
@@ -952,7 +911,7 @@ class RasEmulator(GPRAS):
         result = self.kfold_eof_results[fold_name]
         wet_indices = result["wet_indices"]
         eofs = result["EOFs"]
-        data_mean = result["data_mean"]
+        # hf_mean = result["data_mean"]
         train_runs = result["train_runs"]
 
         # Retrieve elevation in HF cell order for wet cells
@@ -964,55 +923,38 @@ class RasEmulator(GPRAS):
             weights = np.ones(len(wet_indices), dtype=np.float32)
 
         all_ecs = []
+        lf_train_runs = []
         for hf_run in train_runs:
-            lf_run = self.run_mapping_hf_to_lf.get(hf_run)
-            if lf_run is None:
-                raise KeyError(f"No LF equivalent found for HF run: {hf_run}")
+            lf_train_runs.append(self.run_mapping_hf_to_lf.get(hf_run))
+        lf_data_runs = [self.data_x.xs(run, level="run").values[:, wet_indices] for run in lf_train_runs]
+        lf_data_stacked = np.vstack(lf_data_runs)
+        lf_filtered = self.filter_dry_areas(lf_data_stacked, elevation_hf_order)
+        all_ecs = self.create_pseudo_ecs(lf_filtered, eofs, weights, data_mean=None)
+        return all_ecs
 
-            print(lf_run)
-
-            lf_data = self.data_x.xs(lf_run, level="run").values
-            print(len(lf_data))
-            # lf_data = self.data_x.xs(lf_run, level="run").values[:, wet_indices]
-
-            # Step 1: Filter dry areas
-            lf_filtered = self.filter_dry_areas(lf_data[:, wet_indices], elevation_hf_order)
-
-            # Step 2: Center and weight using HF mean & cell weights
-            lf_centered = self.center_and_weight_lf_data(
-                lf_filtered, hf_temporal_mean=data_mean, wet_indices=wet_indices, weights=weights
-            )
-
-            # Step 3: Project to get pseudo ECs
-            ecs = self.create_pseudo_ecs(lf_centered, eofs=eofs, weights=np.ones_like(weights), data_mean=data_mean)
-
-            all_ecs.append(ecs)
-            logging.info("LF ECs derived for run %s with shape %s", lf_run, ecs.shape)
-
-        return np.vstack(all_ecs)
-
-    def compute_and_store_all_lf_ecs(self) -> None:
+    def compute_and_store_all_lf_ecs(self) -> dict[str, np.ndarray]:
         """Compute and store LF ECs from all K-folds into self.X_train.
 
-        This will populate self.X_train as a dictionary with fold names as keys
-        and EC arrays (timesteps × modes) as values.
+        This will populate lf_ecs as a dictionary with fold names as keys
+        and EC arrays (timesteps x modes) as values.
         """
-        self.X_train = {}
+        # self.X_train = {}
+        lf_ecs = {}
         for fold_name in self.kfold_eof_results:
             ecs = self.derive_lf_ecs_from_hf_eof(fold_name)
-            self.X_train[fold_name] = ecs
-            logging.info("Stored LF ECs for %s into self.X_train", fold_name)
+            lf_ecs[fold_name] = ecs
+        return lf_ecs
 
     @cached_property
     def data_x_train(self) -> dict[str, np.ndarray]:
         """Cached property to compute and store low-fidelity ECs (inputs) for all folds.
 
         Returns:
-            dict[str, np.ndarray]: Mapping from fold names to LF EC arrays (timesteps × modes).
+            dict[str, np.ndarray]: Mapping from fold names to LF EC arrays (timesteps x modes).
         """
         logging.info("Computing and caching LF ECs as training inputs (data_x_train)")
-        self.compute_and_store_all_lf_ecs()
-        return self.X_train
+        lf_ecs_dict = self.compute_and_store_all_lf_ecs()
+        return lf_ecs_dict
 
     def visualize_all_lf_ecs(self, n_modes_to_plot: int = 3, output_dir: str | None = None) -> None:
         """Visualize LF ECs over time for the top `n_modes_to_plot` modes across all K-folds.
