@@ -1,10 +1,15 @@
 """HEC-RAS model class and associated functions."""
 
 import shutil
+from functools import cached_property
 from typing import Any, TypeVar
 
-from hecstac.ras.assets import GenericAsset
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+from hecstac.ras.assets import GenericAsset, GeometryHdfAsset, PlanHdfAsset
 from hecstac.ras.item import RASModelItem
+from numpy.typing import NDArray
 from pystac import Asset
 
 from gpras.ras.plan import (
@@ -60,6 +65,76 @@ class RasModel(RASModelItem):  # type: ignore[misc]
         max_suffix = f"p{str(max_plan_ind).zfill(2)}"
         new_suffix = f"p{str(new_plan_ind).zfill(2)}"
         return suffixes[max_plan_ind].replace(max_suffix, new_suffix)
+
+    @cached_property
+    def plan_hdfs(self) -> dict[str, PlanHdfAsset]:
+        """Get a dictionary mapping plan name to PlanHdfAsset."""
+        return {
+            i.extra_fields["HEC-RAS:plan_information_plan_name"]: i.file.hdf_object
+            for i in self.assets.values()
+            if isinstance(i, PlanHdfAsset)
+        }
+
+    @cached_property
+    def geometry_hdfs(self) -> dict[str, GeometryHdfAsset]:
+        """Get a dictionary mapping geometry name to GeometryHdfAsset."""
+        return {
+            i.file.hdf_object.get_geom_attrs()["Title"]: i.file.hdf_object
+            for i in self.assets.values()
+            if isinstance(i, GeometryHdfAsset)
+        }
+
+    def get_cell_minimum_elevation(self, plan: str, mesh_id: str) -> NDArray[Any]:
+        """Get minimum elevation values for cells in a plan."""
+        plan_asset = self.plan_hdfs[plan]
+        mesh_path = f"Geometry/2D Flow Areas/{mesh_id}/Cells Minimum Elevation"
+        elevations: NDArray[Any] = plan_asset[mesh_path][()]
+        elevations = elevations[~np.isnan(elevations)]
+        return elevations
+
+    def get_plan_wsels(self, plans: list[str], mesh_id: str) -> pd.DataFrame:
+        """Extract water surface elevations from a HEC-RAS plan at each computational cell."""
+        store = []
+        for p in plans:
+            plan_asset = self.plan_hdfs[p]
+            wse = plan_asset.mesh_timeseries_output(mesh_id, "Water Surface").values
+            df = pd.DataFrame(wse)
+            df["run"] = p
+            df["t"] = df.index.to_list()
+            store.append(df)
+        merged = pd.concat(store)
+        merged = merged.set_index(["run", "t"])
+        return merged
+
+    def get_plan_depths(self, plans: list[str], mesh_id: str) -> pd.DataFrame:
+        """Extract depths from a HEC-RAS plan at each computational cell."""
+        elevations = self.get_cell_minimum_elevation(plans[0], mesh_id)
+        wsels = self.get_plan_wsels(plans, mesh_id)
+        depths = wsels - elevations
+        return depths
+
+    def get_cell_areas(self, plan: str, mesh_id: str) -> NDArray[Any]:
+        """Cached property that computes cell areas as weights.
+
+        Returns:
+            - A dictionary mapping cell IDs to surface area (used as weights).
+            - A GeoDataFrame with cell_id, area, and geometry (useful for plotting).
+
+        Only computed if `use_cell_weights` is enabled.
+        """
+        plan_asset = self.plan_hdfs[plan]
+        mesh_path = f"Geometry/2D Flow Areas/{mesh_id}/Cells Surface Area"
+        areas: NDArray[Any] = plan_asset[mesh_path][()]
+        areas = areas[(~np.isnan(areas)) & (~np.isclose(areas, 0, 1e-3))]
+        return areas
+
+    def get_plan_geometry(self, plans: list[str], mesh_id: str) -> gpd.GeoDataFrame:
+        """Get the geometry of a HEC-RAS plan."""
+        geoms = [j.get_attrs(j.PLAN_INFO_PATH)["Geometry Title"] for i, j in self.plan_hdfs.items() if i in plans]
+        assert all(i == geoms[0] for i in geoms), "Multiple geometries found in the hf model runs."
+        geom = self.geometry_hdfs[geoms[0]]
+        meshes = geom.mesh_cell_polygons()
+        return meshes[meshes["mesh_name"] == mesh_id]
 
 
 def add_file_to_prj_file(prj_path: str, file_row: str) -> None:
