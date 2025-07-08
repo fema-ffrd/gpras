@@ -148,7 +148,6 @@ class GPRAS:
         for ind, i in enumerate(self.models):
             tmp_dir = Path(model_dir) / f"model_{ind}"
             tmp_dir.mkdir(exist_ok=True, parents=True)
-            print(tmp_dir)
             tf.saved_model.save(i, tmp_dir)
             dirs.append(str(tmp_dir))
 

@@ -52,7 +52,7 @@ resampler = CellResampler(hf_geom, lf_geom, "cell_id")
 lf_data_resampled = resampler.resample_lf_to_hf(lf_data)
 reducer = PreProcessor(wet_threshold=config["wet_threshold_depth"])
 reducer.fit(hf_data.values, elevations, weights)
-reducer.plot_pca_summary("production/plots/norths_rule")
+reducer.plot_pca_summary(os.path.join(config["plot_dir"], "pca_summary.png"))
 y = reducer.transform(hf_data.values)
 x = reducer.transform(lf_data_resampled.values)
 

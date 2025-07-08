@@ -142,9 +142,9 @@ class PreProcessor:
         # Filter cells that are always dry or always wet
         self.wetness_classes = self.classify_wetness(x, elevations)
         self.elevations = elevations
-        x = x[:, not self.dry_indices]
+        x = x[:, ~self.dry_indices]
         if weights is not None:
-            weights = weights[not self.dry_indices]
+            weights = weights[~self.dry_indices]
             self.weights = weights
 
         # Apply first round of scaling
@@ -181,7 +181,7 @@ class PreProcessor:
             NDArray[Any]: Array of transformed data in EOF space (samples, spatial_mode_count).
         """
         # Filter cells that are always dry or always wet
-        x = x[:, not self.dry_indices].copy()
+        x = x[:, ~self.dry_indices].copy()
 
         # Apply first round of scaling
         x = x - self.mean_array
@@ -213,7 +213,7 @@ class PreProcessor:
         x = x + self.mean_array
         x_full = np.empty((x.shape[0], self.dry_indices.shape[0]))
         x_full[:, self.dry_indices] = self.elevations[self.dry_indices]
-        x_full[:, not self.dry_indices] = x
+        x_full[:, ~self.dry_indices] = x
         return x_full
 
     def _compute_norths_rule(self, pca: PCA | IncrementalPCA) -> int:
