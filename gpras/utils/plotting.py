@@ -1,5 +1,6 @@
 """Utilities for generating diagnostic and QC plots."""
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,41 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from numpy.typing import NDArray
+
+COMMON_COLORS = ["#0084FF", "#FF7F0E", "#009E73", "#E69F00", "#CC79A7"]
+
+
+def apply_formatting(fig: Figure, ax: Axes | Sequence[Axes]) -> None:
+    """Apply consistent formatting to plots."""
+    plt.rcParams["font.family"] = "DejaVu Sans"
+    axs = [ax] if isinstance(ax, Axes) else list(ax)
+
+    fig.patch.set_facecolor("white")
+
+    for a in axs:
+        a.set_facecolor("#f7f7f7")
+        for spine in a.spines.values():
+            spine.set_color("#666666")
+            spine.set_linewidth(0.8)
+        a.grid(True, color="#cccccc", linestyle="--", linewidth=0.7, alpha=0.7)
+        a.set_axisbelow(True)
+        a.tick_params(axis="both", which="major", color="#666666", labelsize=10, length=5)
+        a.tick_params(axis="both", which="minor", color="#999999", labelsize=8, length=3)
+        a.xaxis.label.set_size(10)
+        a.yaxis.label.set_size(10)
+        a.xaxis.label.set_weight("medium")
+        a.yaxis.label.set_weight("medium")
+        a.title.set_size(14)
+        a.title.set_weight("heavy")
+        legend = a.get_legend()
+        if legend:
+            legend.set_frame_on(False)
+            legend.get_frame().set_alpha(0.0)
+
+    fig.tight_layout()
 
 
 def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: str) -> None:
@@ -31,18 +66,21 @@ def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: 
     df_x = pd.DataFrame(x[:, :modes_to_plot], columns=x_cols)
     df_y = pd.DataFrame(y[:, :modes_to_plot], columns=y_cols)
     df = pd.concat([df_x, df_y], axis=1)
-    g = sns.pairplot(df, x_vars=x_cols, y_vars=y_cols, plot_kws={"marker": "+", "linewidth": 1, "size": 1})
+    g = sns.pairplot(
+        df, x_vars=x_cols, y_vars=y_cols, plot_kws={"marker": "+", "linewidth": 1, "size": 1, "color": COMMON_COLORS[0]}
+    )
     for i, (x_col, y_col) in enumerate(zip(x_cols, y_cols, strict=False)):
         ax = g.axes[i, i]
         x_min, x_max = df[x_col].min(), df[x_col].max()
         y_min, y_max = df[y_col].min(), df[y_col].max()
         min_val = min(x_min, y_min)
         max_val = max(x_max, y_max)
-        ax.plot([min_val, max_val], [min_val, max_val], color="k", linestyle="--", linewidth=1, alpha=0.8)
+        ax.plot([min_val, max_val], [min_val, max_val], color="k", linestyle="--", linewidth=2.5)
+    apply_formatting(g.figure, g.axes.flatten())
     g.savefig(out_path)
 
 
-def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_dir: str, ind: pd.Index) -> None:
+def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, out_dir: str) -> None:
     """Plot EOF time series for low- and high-fidelity models by event plan.
 
     Args:
@@ -60,15 +98,15 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_dir:
     for event_label, count in zip(*events, strict=False):
         fig, axs = plt.subplots(nrows=modes_to_plot, figsize=(6.5, 2 * modes_to_plot), sharex=True)
         for i, ax in enumerate(axs):
-            ax.plot(y[cum_index : cum_index + count, i], label="HF model")
-            ax.plot(x[cum_index : cum_index + count, i], label="LF model")
+            ax.plot(y[cum_index : cum_index + count, i], label="HF model", c=COMMON_COLORS[0])
+            ax.plot(x[cum_index : cum_index + count, i], label="LF model", c=COMMON_COLORS[1])
             ax.set_ylabel(f"EOF_{i}")
             ax.set_yticks([], labels=[])
         cum_index += count
         axs[0].legend()
         axs[-1].set_xlabel("Timestep")
         fig.suptitle(f"Plan {event_label}")
-        fig.tight_layout()
+        apply_formatting(fig, axs)
         fig.savefig(Path(out_dir) / f"Plan_{event_label}.png")
         plt.close(fig)
 
@@ -89,7 +127,7 @@ def performance_scatterplot(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDAr
 
     fig, axs = plt.subplots(ncols=2, figsize=(6.5, 4), sharey=True)
 
-    axs[0].scatter(lf, hf, s=1, c="r", alpha=0.8)
+    axs[0].scatter(lf, hf, s=1, c=COMMON_COLORS[0], alpha=0.8)
     ll, ur = min([lf.min(), hf.min()]), max([lf.max(), hf.max()])
     axs[0].plot((ll, ur), (ll, ur), ls="dashed", c="k")
     rmse = np.mean((lf - hf) ** 2) ** 0.5
@@ -97,13 +135,13 @@ def performance_scatterplot(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDAr
     axs[0].set_ylabel("High-fidelity Model WSE (ft)")
     axs[0].set_xlabel("Low-fidelity Model WSE (ft)")
 
-    axs[1].scatter(lf_upskill, hf, s=1, c="r", alpha=0.8)
+    axs[1].scatter(lf_upskill, hf, s=1, c=COMMON_COLORS[0], alpha=0.8)
     ll, ur = min([lf_upskill.min(), hf.min()]), max([lf_upskill.max(), hf.max()])
     axs[1].plot((ll, ur), (ll, ur), ls="dashed", c="k")
     rmse = np.mean((lf_upskill - hf) ** 2) ** 0.5
     axs[1].text(0.95, 0.05, f"rmse: {round(rmse, 2)}", ha="right", va="bottom", transform=axs[1].transAxes)
     axs[1].set_xlabel("Upskilled Model WSE (ft)")
-    fig.tight_layout()
+    apply_formatting(fig, axs)
     fig.savefig(out_path)
     plt.close(fig)
 
@@ -125,10 +163,11 @@ def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any]
     pcts = np.linspace(0, 100, len(lf_residual))
 
     fig, ax = plt.subplots(figsize=(6.5, 4))
-    ax.plot(lf_residual, pcts, label="Low-Fidelity Model")
-    ax.plot(upskill_residual, pcts, label="Upskilled Model")
-    ax.set_ylabel("Percent of Cells Less Than")
-    ax.set_xlabel("Absolute Error (ft)")
+    ax.plot(lf_residual, pcts, label="Low-Fidelity Model", c=COMMON_COLORS[0])
+    ax.plot(upskill_residual, pcts, label="Upskilled Model", c=COMMON_COLORS[1])
+    ax.set_ylabel("Percent of Cells")
+    ax.set_xlabel("Absolute Error Less Than (ft)")
     ax.legend()
+    apply_formatting(fig, ax)
     fig.savefig(out_path)
     plt.close(fig)
