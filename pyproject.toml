@@ -14,9 +14,12 @@ authors = [
   { name = "Rosemary Cyriac", email = "Rosemary.Cyriac@atkinsrealis.com" },
 ]
 dependencies = [
-  "gpflow==2.9.2",
-  "rashdf==0.7.2",
-  "hecstac==0.2.0"
+  "gpflow",
+  "rashdf",
+  "hecstac",
+  "scikit-learn",
+  "chardet",
+  "seaborn"
 ]
 
 [project.optional-dependencies]

@@ -4,6 +4,10 @@ WORKDIR /workspace
 
 ADD . .
 
+# hecdss is not on PyPI
+RUN pip install -i https://test.pypi.org/simple/ hecdss
+RUN python -c "from hecdss import download_hecdss"
+
 # Make development container
 FROM base AS dev
 
