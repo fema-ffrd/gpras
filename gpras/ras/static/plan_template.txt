@@ -1,7 +1,7 @@
 Plan Title={plan_title}
 Program Version=6.50
 Short Identifier={plan_id}
-Simulation Date=,,,
+Simulation Date={start_dat},{start_time},{end_date}{end_time},
 Geom File={geometry_suffix}
 Flow File={flow_suffix}
 Subcritical Flow
@@ -30,10 +30,10 @@ Flow Ratio Min Ratio=0.5
 Flow Ratio Max Ratio=4
 Flow Ratio Max Iterations= 10
 Flow Ratio Reference=
-Computation Interval=1MIN
-Output Interval=1HOUR
-Instantaneous Interval=1HOUR
-Mapping Interval=1HOUR
+Computation Interval={computation_interval}
+Output Interval={output_interval}
+Instantaneous Interval={instantaneous_interval}
+Mapping Interval={mapping_interval}
 Computation Time Step Use Courant=        0
 Computation Time Step Use Time Series=    0
 Computation Time Step Max Courant=
