@@ -179,7 +179,7 @@ Is Critical Boundary=False
 Critical Boundary Flow=
 """  # TODO: When adding features, more wildcards will be needed
 
-    def __init__(self, interval: str, dss_file: str, dss_path: str, **bc_kwargs: Any):
+    def __init__(self, interval: str = "", dss_file: str = "", dss_path: str = "", **bc_kwargs: Any):
         """Class constructor."""
         super().__init__(**bc_kwargs)
         self.interval = interval
@@ -190,16 +190,17 @@ Critical Boundary Flow=
     @classmethod
     def from_lines(cls, lines: str) -> Self:
         """Load boundary condition parameters from a text block."""
+        kwargs = {}
         for i in lines.split("\n"):
             if i.startswith("Boundary Location="):
-                bc_kwargs = _parse_bc_header(i)
+                kwargs.update(_parse_bc_header(i))
             if i.startswith("Interval"):
-                interval = i.split("=")[1]
+                kwargs["interval"] = i.split("=")[1]
             if i.startswith("DSS File"):
-                dss_file = i.split("=")[1]
+                kwargs["dss_file"] = i.split("=")[1]
             if i.startswith("DSS Path"):
-                dss_path = i.split("=")[1]
-        return cls(interval=interval, dss_file=dss_file, dss_path=dss_path, **bc_kwargs)
+                kwargs["dss_path"] = i.split("=")[1]
+        return cls(**kwargs)
 
 
 def boundary_condition_factory(lines: str) -> BoundaryCondition:
@@ -634,6 +635,13 @@ Air Density Mode={air_density_mode}
             consumer("\n".join(buffer))
         return tmp_cls
 
+    @classmethod
+    def from_file(cls, path: str) -> Self:
+        """Read a flow file from disk."""
+        with open(path) as f:
+            lines = f.read()
+        return cls.from_string(lines)
+
     def _parse_program_version(self, val: str) -> None:
         self.program_version = val.split("=")[1]
 
@@ -655,3 +663,8 @@ Air Density Mode={air_density_mode}
             if (not i.startswith("BEGIN FILE DESCRIPTION:")) and (not i.startswith("END FILE DESCRIPTION:")):
                 lines.append(i)
         self.file_description = "\n".join(lines)
+
+    def to_file(self, path: str) -> None:
+        """Write the flow file to disk."""
+        with open(path, mode="w", encoding="ascii", newline="\r\n") as f:
+            f.writelines(self.lines)
