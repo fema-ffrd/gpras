@@ -2,18 +2,21 @@
 
 import shutil
 from functools import cached_property
+from pathlib import Path
 from typing import Any, TypeVar
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from hecstac.ras.assets import GenericAsset, GeometryHdfAsset, PlanHdfAsset
+from hecstac.ras.assets import GenericAsset, GeometryHdfAsset, PlanHdfAsset, UnsteadyFlowAsset
 from hecstac.ras.item import RASModelItem
 from numpy.typing import NDArray
 from pystac import Asset
 
+from gpras.ras.flow import UnsteadyFlowFile
 from gpras.ras.plan import (
     BoundaryType,
+    PlanFile,
     update_hdf_attributes,
     update_hdf_data,
 )
@@ -57,14 +60,40 @@ class RasModel(RASModelItem):  # type: ignore[misc]
         self.plan_assets.append(self.assets[get_filename(dst_txt_path)])
         return dst_path, dst_txt_path
 
+    def add_text_file(self, file: UnsteadyFlowFile | PlanFile) -> str:
+        """Add a new text file (such as plan or flow file) to the RAS .prj."""
+        if isinstance(file, UnsteadyFlowFile):
+            line_base = "Unsteady File={}"
+            existing_files = self.unsteady_flow_assets
+        elif isinstance(file, PlanFile):
+            line_base = "Plan File={}"
+            existing_files = self.plan_assets
+        else:
+            return  # TODO: add more
+        new_file = self.increment_suffix(existing_files)
+        new_path = Path(self.pm.model_root_dir) / new_file
+        file.to_file(str(new_path))
+        add_file_to_prj_file(self.pf.fpath, line_base.format(new_file.split(".")[-1]))
+        return str(new_path)
+
     def increment_suffix(self, paths: list[GenAsset]) -> str:
         """Take a list of paths, find the highest-numbered, and return that file incremented by 1."""
-        suffixes = {int(get_filename(i.href).split(".")[-1].lstrip("p")): get_filename(i.href) for i in paths}
-        max_plan_ind = max(suffixes.keys())
-        new_plan_ind = max_plan_ind + 1
-        max_suffix = f"p{str(max_plan_ind).zfill(2)}"
-        new_suffix = f"p{str(new_plan_ind).zfill(2)}"
-        return suffixes[max_plan_ind].replace(max_suffix, new_suffix)
+        file_hrefs = [i.href for i in paths]
+        file_dict = {int(get_filename(i).split(".")[-1][1:]): get_filename(i) for i in file_hrefs}
+        letter = file_hrefs[0].split(".")[-1][0]
+        assert [i.split(".")[0] == letter for i in file_hrefs], f"Mismatched file types in path list: {file_hrefs}"
+        new_plan_ind = 1
+        while new_plan_ind in file_dict:
+            new_plan_ind += 1
+        max_plan_ind = new_plan_ind - 1
+        max_suffix = f"{letter}{str(max_plan_ind).zfill(2)}"
+        new_suffix = f"{letter}{str(new_plan_ind).zfill(2)}"
+        return file_dict[max_plan_ind].replace(max_suffix, new_suffix)
+
+    @cached_property
+    def unsteady_flow_assets(self) -> list[UnsteadyFlowAsset]:
+        """Return any UnsteadyFlowAsset in assets."""
+        return [a for a in self.assets.values() if isinstance(a, UnsteadyFlowAsset)]
 
     @cached_property
     def plan_hdfs(self) -> dict[str, PlanHdfAsset]:

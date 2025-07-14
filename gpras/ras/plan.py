@@ -1,6 +1,7 @@
 """Tools for building, running, and extracting data from HEC-RAS models."""
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, TypeVar
 
 import h5py
@@ -78,3 +79,46 @@ def update_hdf_data(hdf_path: str, data_path: str, data: NDArray[np.float32]) ->
         print(f"deleting {data_path}")
         del f[data_path]
         f.create_dataset(data_path, data=data)
+
+
+class PlanFile:
+    """Class to read and generate HEC-RAS plan files."""
+
+    DEFAULT_PATH: str = str(Path(__file__).parent / "static" / "plan_template.txt")
+
+    def __init__(self, settings: dict[str, str] | None = None):
+        """Class constructor."""
+        self.settings = self._read_file(self.DEFAULT_PATH)
+        if settings is not None:
+            self.settings.update(settings)
+
+    def __str__(self) -> str:
+        """String with the file contents."""
+        return "\n".join(self.lines)
+
+    @property
+    def lines(self) -> list[str]:
+        """File contents by line."""
+        lines = []
+        for i, j in self.settings.items():
+            tmp_str = f"{i}={j}"
+            if not tmp_str.endswith("\n"):
+                tmp_str += "\n"
+            lines.append(tmp_str)
+        return lines
+
+    def _read_file(self, path: str) -> dict[str, str]:
+        with open(path) as f:
+            lines = f.readlines()
+        settings = {}
+        for i in lines:
+            split = i.split("=")
+            if len(split) != 2:
+                continue
+            settings[split[0]] = split[1].rstrip("\n")
+        return settings
+
+    def to_file(self, path: str) -> None:
+        """Write the plan file to disk."""
+        with open(path, mode="w", encoding="ascii", newline="\r\n") as f:
+            f.writelines(self.lines)
