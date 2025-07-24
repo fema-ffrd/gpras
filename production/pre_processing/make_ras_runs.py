@@ -4,8 +4,7 @@ import json
 import os
 import shutil
 from dataclasses import MISSING, dataclass, fields
-from datetime import datetime
-from functools import cached_property
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Self, cast
@@ -31,7 +30,7 @@ class Settings:
         hdf_data_path (str): Internal path within the HDF file to the data.
         precip_dss_template_path (str): Path to a template DSS file for precipitation.
         flow_dss_path_src (str): Source path for HMS flow DSS data (local or S3).
-        flow_template_suffix (str): Suffix of the unsteady flow file template.
+        template_flow_path (str): Path of an unsteady flow file that defines boundary condition lines.
         dss_dir (str): Directory name for storing DSS files. This will be place in the RAS model directory.
         flow_title (str): Title for the flow data.
         plan_title (str): Title for the simulation plan.
@@ -48,6 +47,7 @@ class Settings:
         precip_dss_data_path (str, optional): Internal path where the precip data will be stored in the generated precip dss. Defaults to "//gpr/PRECIPITATION/{}/{}/RUN:SST/".
         precip_dss_start_path (str, optional): Initial DSS path for precipitation. This is filled in dynamically by the script after reading the dss files.
         flow_file_path (str, optional): Path to the generated flow file. This is filled in dynamically by the script depending on the existing flow files.
+        plan_file_path (str, optional): Path to the generated plan file. This is filled in dynamically by the script depending on the existing plan files.
     """
 
     ras_model_stac: str
@@ -55,7 +55,7 @@ class Settings:
     hdf_data_path: str
     precip_dss_template_path: str
     flow_dss_path_src: str
-    flow_template_path: str
+    template_flow_path: str
     dss_dir: str
     flow_title: str
     plan_title: str
@@ -72,10 +72,11 @@ class Settings:
     precip_dss_data_path: str = "//gpr/PRECIPITATION/{}/{}/RUN:SST/"
     precip_dss_start_path: str | None = None
     flow_file_path: str | None = None
+    plan_file_path: str | None = None
 
     def __post_init__(self) -> None:
         """Load the ras model after initializing the dataclass."""
-        with open("data/bridgeport/bridgeport.stac.json") as f:
+        with open(self.ras_model_stac) as f:
             self.ras_model: RasModel = RasModel.from_dict(json.load(f))
         Path(self.flow_dss_path_absolute).parent.mkdir(exist_ok=True, parents=True)
         Path(self.precip_dss_path_absolute).parent.mkdir(exist_ok=True, parents=True)
@@ -95,27 +96,27 @@ class Settings:
 
         return cls(**data)
 
-    @cached_property
+    @property
     def ras_model_root(self) -> str:
         """Path to the directory containing the HEC-RAS model."""
         return str(Path(self.ras_model.pm.model_root_dir).resolve())
 
-    @cached_property
+    @property
     def flow_dss_path_absolute(self) -> str:
         """Absolute path where the flow dss will be copied to."""
         return str(Path(self.ras_model_root) / self.dss_dir / self.flow_bc_dir / f"{self.flow_title}.dss")
 
-    @cached_property
+    @property
     def precip_dss_path_absolute(self) -> str:
         """Absolute path where the precipitation dss will be copied to."""
         return str(Path(self.ras_model_root) / self.dss_dir / self.precip_bc_dir / f"{self.flow_title}.dss")
 
-    @cached_property
+    @property
     def flow_dss_path_relative(self) -> str:
         """Relative (to the RAS model) path where the flow dss will be copied to."""
         return f"./{self.dss_dir}/{self.flow_bc_dir}/{self.flow_title}.dss"
 
-    @cached_property
+    @property
     def precip_dss_path_relative(self) -> str:
         """Relative (to the RAS model) path where the precipitation dss will be copied to."""
         return f"./{self.dss_dir}/{self.precip_bc_dir}/{self.flow_title}.dss"
@@ -126,13 +127,16 @@ def add_run(settings: Settings) -> None:
     flow = make_unsteady_flow_file(settings)
     settings.flow_file_path = settings.ras_model.add_text_file(flow)
     plan = make_plan_file(settings)
-    settings.ras_model.add_text_file(plan)
+    settings.plan_file_path = settings.ras_model.add_text_file(plan)
 
 
 def make_unsteady_flow_file(settings: Settings) -> UnsteadyFlowFile:
     """Generate an unsteady flow file class with flow boundary and precipitation conditions."""
     # Initialize flow file from template
-    flow = UnsteadyFlowFile.from_file(settings.flow_template_path)
+    # template_flow_path = settings.ras_model.pm.derived_item_asset(
+    #     f"{settings.ras_model.id}.{settings.flow_template_suffix}"
+    # )
+    flow = UnsteadyFlowFile.from_file(settings.template_flow_path)
     flow.flow_title = settings.flow_title
     flow.file_description = ""
 
@@ -175,6 +179,8 @@ def add_boundary_conditions_to_unsteady_flow(flow: UnsteadyFlowFile, settings: S
     elements = [i.B for i in cat]
 
     # Iterate over boundary conditions and link data
+    first_pass = True
+    time_bounds = ""
     for i in flow.boundary_conditions.bcs:
         # Get element id
         if i.bc_line_id.strip() != "":
@@ -194,22 +200,26 @@ def add_boundary_conditions_to_unsteady_flow(flow: UnsteadyFlowFile, settings: S
         path = [j for j in cat if ele_id == j.B and param == j.C][0]
 
         # Set model start and end for later use
-        if settings.start_time is None or settings.end_time is None:
+        if first_pass:
             record = dss.get(path)
             dts = record.times
             settings.start_time = min(dts)
             settings.end_time = max(dts)
             if settings.start_time is None or settings.end_time is None:
                 raise RuntimeError("Unable to determine start and end times from SST dss flow file records.")
+            else:
+                time_bounds = f"{settings.start_time.strftime('%d%b%Y')}-{settings.end_time.strftime('%d%b%Y')}"
+            first_pass = False
 
         # Reformat path to handle USACE's dss formatting errors
         split = str(path).split("/")
-        split[4] = f"{settings.start_time.strftime('%d%b%Y')}-{settings.end_time.strftime('%d%b%Y')}"
+        split[4] = time_bounds
         path = "/".join(split)
 
         # Log DSS data in flow file
         i.dss_file = settings.flow_dss_path_relative
         i.dss_path = path
+        i.flow_hydrograph_slope = "0.001 "
 
     return flow
 
@@ -218,6 +228,11 @@ def add_precipitation_to_unsteady_flow(flow: UnsteadyFlowFile, settings: Setting
     """Write precipitation boundary condition path to an unsteady flow file."""
     flow.precipitation.dss_filename = settings.precip_dss_path_relative
     flow.precipitation.dss_filepath = settings.precip_dss_start_path
+    flow.precipitation.mode = "Gridded"
+    flow.precipitation.expanded_view = "1"
+    flow.precipitation.constant_units = "mm/hr"
+    flow.precipitation.pt_interpolation = "Nearest"
+    flow.precipitation.gridded_source = "DSS"
     return flow
 
 
@@ -229,8 +244,9 @@ def hdf_2_dss(settings: Settings) -> None:
     # Determine temporal resolution
     if settings.start_time is None or settings.end_time is None:
         raise ValueError("Both start_time and end_time must be set before calling hdf_2_dss.")
-    td = settings.end_time - settings.start_time
-    interval = td / data.shape[0]
+    # td = settings.end_time - settings.start_time
+    # interval = td / data.shape[0]
+    interval = timedelta(hours=1)
     t_i = settings.start_time
     t_j = t_i + interval
 
@@ -254,7 +270,8 @@ def hdf_2_dss(settings: Settings) -> None:
             dss.delete(str(i))
 
         # Write new records
-        for i in range(data.shape[0]):
+        # for i in range(data.shape[0]):
+        for i in np.arange(start=-72, stop=0):
             tmp_data = np.flipud(np.reshape(data[i, :], shape))
             record_template.data = tmp_data
             record_template.id = settings.precip_dss_data_path.format(
@@ -309,35 +326,34 @@ def make_runs_from_selected_events(settings_path: str) -> None:
         events_stac = json.load(f)
     del base_settings["events_stac_path"]
 
-    for ind, i in enumerate(events_stac["assets"]):
+    out_path = base_settings["output_path"]
+    del base_settings["output_path"]
+    out_dict = {}
+
+    # Initialize empty settings
+    base_settings["flow_dss_path_src"] = ""
+    base_settings["precip_hdf_path"] = ""
+    base_settings["flow_title"] = ""
+    base_settings["plan_title"] = ""
+    base_settings["plan_short_id"] = ""
+    settings = Settings(**base_settings)
+
+    for ind, i in enumerate(events_stac["assets"], start=1):
+        print(f"Making gpr{ind}")
         asset = events_stac["assets"][i]
-        base_settings["flow_dss_path_src"] = asset["href"]
-        base_settings["precip_hdf_path"] = base_settings["flow_dss_path_src"].replace(
-            "SST.dss", "exported-precip_trinity.p01.tmp.hdf"
-        )
-        base_settings["flow_title"] = f"gpr{ind}"
-        base_settings["plan_title"] = f"gpr{ind}"
-        base_settings["plan_short_id"] = f"gpr{ind}"
-        settings = Settings(**base_settings)
+        settings.flow_dss_path_src = asset["href"]
+        settings.precip_hdf_path = settings.flow_dss_path_src.replace("SST.dss", "exported-precip_trinity.p01.tmp.hdf")
+        settings.flow_title = f"gpr{ind}"
+        settings.plan_title = f"gpr{ind}"
+        settings.plan_short_id = f"gpr{ind}"
         add_run(settings)
+        out_dict[i] = settings.plan_file_path
+
+    with open(out_path, mode="w"):
+        json.dumps(out_dict)
+
+    settings.ras_model.to_file(out_path="/workspaces/gpras/production/configurations/0.1.0/bridgeport_2.stac.json")
 
 
 if __name__ == "__main__":
-    settings = Settings(
-        ras_model_stac="data/bridgeport/bridgeport.stac.json",
-        precip_hdf_path="s3://trinity-pilot/conformance/simulations/event-data/9373/hydrology/exported-precip_trinity.p01.tmp.hdf",
-        hdf_data_path="/Event Conditions/Meteorology/Precipitation/Values",
-        precip_dss_template_path="exported-precip_trinity.dss",
-        flow_dss_path_src="s3://trinity-pilot/conformance/simulations/event-data/9373/hydrology/SST.dss",
-        flow_template_path="/workspaces/gpras/data/bridgeport/bridgeport.u01",
-        dss_dir="gpr_dss_files",
-        flow_title="gpr000",
-        plan_title="gpr000",
-        plan_short_id="gpr",
-        geom_file_suffix="g03",
-        computation_interval="10SEC",
-        output_interval="1HOUR",
-        instantaneous_interval="1HOUR",
-        mapping_interval="20MIN",
-    )
-    add_run(settings)
+    make_runs_from_selected_events("/workspaces/gpras/production/configurations/0.1.0/run_maker_settings_HF.json")
