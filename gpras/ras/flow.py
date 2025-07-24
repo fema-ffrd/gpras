@@ -170,6 +170,7 @@ class FlowBoundaryCondition(BoundaryCondition):
 Interval={interval}
 Flow Hydrograph={flow_hydrograph}
 Stage Hydrograph TW Check=0
+Flow Hydrograph Slope= {flow_hydrograph_slope}
 DSS File={dss_file}
 DSS Path={dss_path}
 Use DSS=True
@@ -186,6 +187,7 @@ Critical Boundary Flow=
         self.dss_file = dss_file
         self.dss_path = dss_path
         self.flow_hydrograph = " 0 "
+        self.flow_hydrograph_slope = ""
 
     @classmethod
     def from_lines(cls, lines: str) -> Self:
@@ -248,11 +250,6 @@ class MetBoundaryCondition:
         self.expanded_view = expanded_view
         self.pt_interpolation = pt_interpolation
         self.gridded_source = gridded_source
-        self.attributes = {
-            "Expanded View": self.expanded_view,
-            "Point Interpolation": self.pt_interpolation,
-            "Gridded Source": self.gridded_source,
-        }
 
     def __str__(self) -> str:
         """Lines that will go in the text file."""
@@ -273,6 +270,15 @@ class MetBoundaryCondition:
     def line_triggers(self) -> dict[str, Callable[[str], None]]:
         """List of line starts that refer to this class."""
         return {f"Met BC={self.param}|{i}": self._parse_attribute for i in self.attributes}
+
+    @property
+    def attributes(self) -> dict[str, str | None | BC_PRECIP_MODE]:
+        """Attributes that will be written to file."""
+        return {
+            "Expanded View": self.expanded_view,
+            "Point Interpolation": self.pt_interpolation,
+            "Gridded Source": self.gridded_source,
+        }
 
 
 class Precipitation(MetBoundaryCondition):
@@ -300,7 +306,11 @@ class Precipitation(MetBoundaryCondition):
         self.gridded_source = gridded_source
         self.dss_filename = dss_filename
         self.dss_filepath = dss_filepath
-        self.attributes = {
+
+    @property
+    def attributes(self) -> dict[str, str | None | BC_PRECIP_MODE]:
+        """Attributes that will be written to file."""
+        return {
             "Mode": self.mode,
             "Expanded View": self.expanded_view,
             "Constant Value": self.constant_value,
@@ -337,7 +347,11 @@ class Evapotranspiration(MetBoundaryCondition):
         self.gridded_source = gridded_source
         self.dss_filename = dss_filename
         self.dss_filepath = dss_filepath
-        self.attributes = {
+
+    @property
+    def attributes(self) -> dict[str, str | None | BC_PRECIP_MODE]:
+        """Attributes that will be written to file."""
+        return {
             "Mode": self.mode,
             "Expanded View": self.expanded_view,
             "Constant Value": self.constant_value,
@@ -402,7 +416,11 @@ class AirDensity(MetBoundaryCondition):
         self.constant_units = "kg/m3"
         self.pt_interpolation = "Nearest"
         self.gridded_source = "DSS"
-        self.attributes = {
+
+    @property
+    def attributes(self) -> dict[str, str | None | BC_PRECIP_MODE]:
+        """Attributes that will be written to file."""
+        return {
             "Mode": self.mode,
             "Expanded View": self.expanded_view,
             "Constant Value": self.constant_value,
@@ -477,7 +495,11 @@ class AirPressure(MetBoundaryCondition):
         self.constant_units = "mb"
         self.pt_interpolation = "Inv Distance"
         self.gridded_source = "DSS"
-        self.attributes = {
+
+    @property
+    def attributes(self) -> dict[str, str | None | BC_PRECIP_MODE]:
+        """Attributes that will be written to file."""
+        return {
             "Mode": self.mode,
             "Expanded View": self.expanded_view,
             "Constant Value": self.constant_value,

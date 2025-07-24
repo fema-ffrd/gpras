@@ -3,12 +3,12 @@
 import shutil
 from functools import cached_property
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from hecstac.ras.assets import GenericAsset, GeometryHdfAsset, PlanHdfAsset, UnsteadyFlowAsset
+from hecstac.ras.assets import GenericAsset, GeometryHdfAsset, PlanAsset, PlanHdfAsset, UnsteadyFlowAsset
 from hecstac.ras.item import RASModelItem
 from numpy.typing import NDArray
 from pystac import Asset
@@ -34,7 +34,7 @@ class RasModel(RASModelItem):  # type: ignore[misc]
         """Append a new plan to the model."""
         # Define paths
         src_path: str = self.assets[template_run].href
-        new_run = self.increment_suffix(self.plan_assets)
+        new_run = self.increment_suffix(self.plan_assets, "p")
         dst_path: str = src_path.replace(template_run, new_run + ".hdf")
         src_txt_path: str = src_path.replace(".hdf", "")
         dst_txt_path: str = dst_path.replace(".hdf", "")
@@ -65,35 +65,43 @@ class RasModel(RASModelItem):  # type: ignore[misc]
         if isinstance(file, UnsteadyFlowFile):
             line_base = "Unsteady File={}"
             existing_files = self.unsteady_flow_assets
+            letter = "u"
         elif isinstance(file, PlanFile):
             line_base = "Plan File={}"
             existing_files = self.plan_assets
+            letter = "p"
         else:
             return  # TODO: add more
-        new_file = self.increment_suffix(existing_files)
+        new_file = self.increment_suffix(existing_files, letter)
         new_path = Path(self.pm.model_root_dir) / new_file
         file.to_file(str(new_path))
         add_file_to_prj_file(self.pf.fpath, line_base.format(new_file.split(".")[-1]))
+        asset = Asset(str(new_path), new_path.name)
+        self.add_asset(new_path.name, asset)
         return str(new_path)
 
-    def increment_suffix(self, paths: list[GenAsset]) -> str:
+    def increment_suffix(self, paths: list[GenAsset], suffix_letter: str) -> str:
         """Take a list of paths, find the highest-numbered, and return that file incremented by 1."""
         file_hrefs = [i.href for i in paths]
         file_dict = {int(get_filename(i).split(".")[-1][1:]): get_filename(i) for i in file_hrefs}
-        letter = file_hrefs[0].split(".")[-1][0]
-        assert [i.split(".")[0] == letter for i in file_hrefs], f"Mismatched file types in path list: {file_hrefs}"
+        assert all(
+            i.split(".")[1][0] == suffix_letter for i in file_hrefs
+        ), f"Mismatched file types in path list: {file_hrefs}"
         new_plan_ind = 1
         while new_plan_ind in file_dict:
             new_plan_ind += 1
-        max_plan_ind = new_plan_ind - 1
-        max_suffix = f"{letter}{str(max_plan_ind).zfill(2)}"
-        new_suffix = f"{letter}{str(new_plan_ind).zfill(2)}"
-        return file_dict[max_plan_ind].replace(max_suffix, new_suffix)
+        new_suffix = f"{suffix_letter}{str(new_plan_ind).zfill(2)}"
+        return cast(str, self.pm.derived_item_asset(f"{self.id}.{new_suffix}"))
 
-    @cached_property
+    @property
     def unsteady_flow_assets(self) -> list[UnsteadyFlowAsset]:
         """Return any UnsteadyFlowAsset in assets."""
         return [a for a in self.assets.values() if isinstance(a, UnsteadyFlowAsset)]
+
+    @property
+    def plan_assets(self) -> list[PlanAsset]:
+        """Return any RasGeomHdf in assets."""
+        return [a for a in self.assets.values() if isinstance(a, PlanAsset)]
 
     @cached_property
     def plan_hdfs(self) -> dict[str, PlanHdfAsset]:
