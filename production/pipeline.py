@@ -7,6 +7,7 @@ from typing import TypedDict
 import numpy as np
 
 from gpras.gpr import GPRAS, KernelType
+from gpras.metrics import export_metric_summary
 from gpras.preprocess import CellResampler, PreProcessor
 from gpras.ras.model import RasModel
 from gpras.utils.plotting import ec_pairplot, ec_timeseries, performance_cdf, performance_scatterplot
@@ -27,6 +28,7 @@ class Config(TypedDict):
 
 config: Config = {
     "ras_stac_path": "/workspaces/gpras/data/Muncie/Muncie.stac.json",
+    # "ras_stac_path": "/workspaces/gpras/production/configurations/0.1.0/bridgeport_2.stac.json",
     "mesh_id": "2D Interior Area",
     "hf_plans": ["hf1", "hf2", "hf3"],
     "lf_plans": ["lf1", "lf2", "lf3"],
@@ -68,6 +70,7 @@ gpr.to_file("gpr.json")
 # Predict
 mean_pred, var_pred = gpr.predict(x)
 y_pred = reducer.reverse_transform(mean_pred)
+export_metric_summary(hf_data.values, y_pred, "performance_metrics.db")
 performance_scatterplot(
     lf_data_resampled.values, hf_data.values, y_pred, os.path.join(config["plot_dir"], "performance_scatterplot.png")
 )
