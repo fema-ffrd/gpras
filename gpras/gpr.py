@@ -168,7 +168,7 @@ class GPRAS:
         full_variances = np.concatenate(variances, axis=1)
         return full_means, full_variances
 
-    def to_file(self, json_path: str, model_dir: str | None = None) -> None:
+    def to_file(self, json_path: str | Path, model_dir: str | Path | None = None) -> None:
         """Serialize the trained Gaussian Process Regression model to disk.
 
         This method saves each trained model in a separate directory and creates a

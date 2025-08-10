@@ -1,6 +1,7 @@
 """Tools to wrangle HEC-RAS data into a format usable by the gaussian process regression model."""
 
 from functools import cached_property
+from pathlib import Path
 from typing import Any, cast
 
 import geopandas as gpd
@@ -420,7 +421,7 @@ class PreProcessor:
         classes[min_depth > self.wet_threshold] = "AF"  # Always Flooded
         return classes
 
-    def plot_pca_summary(self, out_path: str) -> None:
+    def plot_pca_summary(self, out_path: str | Path) -> None:
         """Plot a summary of PCA eigenvalues with uncertainty and highlight number of selected modes.
 
         Args:

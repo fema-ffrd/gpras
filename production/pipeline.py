@@ -1,7 +1,6 @@
 """Example script for running a GPR model training workflow."""
 
 import json
-import os
 import time
 from dataclasses import dataclass
 from functools import cached_property
@@ -131,19 +130,19 @@ def main(config_path: str, testing: bool) -> None:
     print("Preprocessing data")
     reducer = PreProcessor(wet_threshold=config.wet_threshold_depth, depth=config.depth)
     reducer.fit(hf_data, extracter.cell_elevations, extracter.cell_areas, config.spatial_mode_count)
-    reducer.plot_pca_summary(os.path.join(config.plot_dir, "pca_summary.png"))
+    reducer.plot_pca_summary(config.plot_dir / "pca_summary.png")
     y = reducer.transform(hf_data)
     x = reducer.transform(lf_data)
 
-    ec_pairplot(x, y, 5, os.path.join(config.plot_dir, "pairplot.png"))
-    ec_timeseries(x, y, 5, hf_data_df.index, os.path.join(config.plot_dir, "ec_timeseries"))
+    ec_pairplot(x, y, 5, config.plot_dir / "pairplot.png")
+    ec_timeseries(x, y, 5, hf_data_df.index, config.plot_dir / "ec_timeseries")
 
     # Fit GPR
     t3 = time.perf_counter()
     print("Fitting GPR")
     gpr = GPRAS(config.kernel)
     gpr.fit(x, y, config.inducing_fraction)
-    gpr.to_file("gpr.json")
+    gpr.to_file(config.model_dir / "gpr.json")
 
     # Load test data
     t4 = time.perf_counter()
@@ -164,7 +163,7 @@ def main(config_path: str, testing: bool) -> None:
     x_test = reducer.transform(lf_test_data)
     y_test = reducer.transform(hf_test_data)
 
-    ec_pairplot(x_test, y_test, 5, os.path.join(config.plot_dir, "pairplot_test.png"))
+    ec_pairplot(x_test, y_test, 5, config.plot_dir / "pairplot_test.png")
 
     # Predict test data
     t5 = time.perf_counter()
@@ -177,20 +176,20 @@ def main(config_path: str, testing: bool) -> None:
     # Assess performance
     t6 = time.perf_counter()
     print("Calculating metrics and making performance plots")
-    export_metric_summary(hf_test_data, y_test_pred, "performance_metrics.db")
+    export_metric_summary(hf_test_data, y_test_pred, config.metric_dir / "performance_metrics.db")
     performance_scatterplot(
         lf_test_data,
         hf_test_data,
         y_test_pred,
-        os.path.join(config.plot_dir, "performance_scatterplot.png"),
+        config.plot_dir / "performance_scatterplot.png",
     )
     performance_cdf(
         lf_test_data,
         hf_test_data,
         y_test_pred,
-        os.path.join(config.plot_dir, "performance_cdf.png"),
+        config.plot_dir / "performance_cdf.png",
     )
-    ec_pairplot(mean_pred, y_test, 5, os.path.join(config.plot_dir, "pairplot_test_predicted.png"))
+    ec_pairplot(mean_pred, y_test, 5, config.plot_dir / "pairplot_test_predicted.png")
 
     lf_test_data_depth = reducer.wse_2_depth(lf_test_data)
     hf_test_data_depth = reducer.wse_2_depth(hf_test_data)
@@ -199,7 +198,7 @@ def main(config_path: str, testing: bool) -> None:
         lf_test_data_depth,
         hf_test_data_depth,
         y_test_pred_depth,
-        os.path.join(config.plot_dir, "performance_scatterplot_depth.png"),
+        config.plot_dir / "performance_scatterplot_depth.png",
         depth=True,
     )
 
@@ -217,7 +216,7 @@ def main(config_path: str, testing: bool) -> None:
     print("Exporting GIS")
     hf_geom = extracter.hf_geometry_aoi
     lf_geom = extracter.lf_geometry_aoi
-    hf_geom["lf_cell_id"] = extracter._lf_mask
+    hf_geom["lf_cell_id"] = extracter.lf_resampler
     hf_geom["wetness_class"] = reducer.wetness_classes
     hf_geom["lf_hf_rmse"] = np.mean((lf_test_data - hf_test_data) ** 2, axis=0) ** 0.5
     hf_geom["upskill_hf_rmse"] = np.mean((y_test_pred - hf_test_data) ** 2, axis=0) ** 0.5

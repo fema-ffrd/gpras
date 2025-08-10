@@ -1,6 +1,7 @@
 """Metrics to assess the performance of a GPR model."""
 
 import sqlite3
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ from numpy.typing import NDArray
 def export_metric_summary(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    out_path: str,
+    out_path: str | Path,
     depth_threshold: float = 0.5,
     t_tol: int = 0,
     v_tol: float = 0,

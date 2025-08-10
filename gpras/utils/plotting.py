@@ -45,7 +45,7 @@ def apply_formatting(fig: Figure, ax: Axes | Sequence[Axes]) -> None:
     fig.tight_layout()
 
 
-def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: str) -> None:
+def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: str | Path) -> None:
     """Generate a Seaborn pairplot comparing low-fidelity and high-fidelity EOF mode values.
 
     This plot is useful for assesing how closely LF modes are to HF modes (diagonal plots).
@@ -80,7 +80,7 @@ def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: 
     g.savefig(out_path)
 
 
-def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, out_dir: str) -> None:
+def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, out_dir: str | Path) -> None:
     """Plot EOF time series for low- and high-fidelity models by event plan.
 
     Args:
@@ -112,7 +112,7 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.
 
 
 def performance_scatterplot(
-    lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str, depth: bool = False
+    lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path, depth: bool = False
 ) -> None:
     """Plot scatterplots comparing low-fidelity vs high-fidelity and upskilled vs high-fidelity models depth estimates.
 
@@ -150,7 +150,7 @@ def performance_scatterplot(
     plt.close(fig)
 
 
-def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str) -> None:
+def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path) -> None:
     """Plot cumulative distribution of absolute error for low-fidelity and upskilled models.
 
     Args:
