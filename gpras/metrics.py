@@ -53,9 +53,9 @@ def export_metric_summary(
 
     # Export to sqlite
     with sqlite3.connect(out_path) as con:
-        scalar_df.to_sql("scalar_metrics", con, index=False)
-        timeseries_df.to_sql("timeseries_metrics", con, index=False)
-        cell_df.to_sql("cell_metrics", con, index=False)
+        scalar_df.to_sql("scalar_metrics", con, index=False, if_exists="replace")
+        timeseries_df.to_sql("timeseries_metrics", con, index=False, if_exists="replace")
+        cell_df.to_sql("cell_metrics", con, index=False, if_exists="replace")
 
 
 def rmse_aoi_toi(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:

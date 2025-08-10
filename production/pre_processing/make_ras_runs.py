@@ -328,7 +328,7 @@ def make_runs_from_selected_events(settings_path: str) -> None:
 
     out_path = base_settings["output_path"]
     del base_settings["output_path"]
-    out_dict = {}
+    out_dict = []
 
     # Initialize empty settings
     base_settings["flow_dss_path_src"] = ""
@@ -346,11 +346,13 @@ def make_runs_from_selected_events(settings_path: str) -> None:
         settings.flow_title = f"gpr{ind}"
         settings.plan_title = f"gpr{ind}"
         settings.plan_short_id = f"gpr{ind}"
-        add_run(settings)
-        out_dict[i] = settings.plan_file_path
+        # add_run(settings)
+        out_dict.append(
+            {"plan_title": settings.plan_title, "event_number": asset["event_id"], "type": asset["roles"][0]}
+        )
 
-    with open(out_path, mode="w"):
-        json.dumps(out_dict)
+    with open(out_path, mode="w") as f:
+        json.dump(out_dict, f, indent=4)
 
     settings.ras_model.to_file(out_path="/workspaces/gpras/production/configurations/0.1.0/bridgeport_2.stac.json")
 

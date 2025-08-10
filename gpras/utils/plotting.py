@@ -111,7 +111,9 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.
         plt.close(fig)
 
 
-def performance_scatterplot(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str) -> None:
+def performance_scatterplot(
+    lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str, depth: bool = False
+) -> None:
     """Plot scatterplots comparing low-fidelity vs high-fidelity and upskilled vs high-fidelity models depth estimates.
 
     Args:
@@ -119,6 +121,7 @@ def performance_scatterplot(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDAr
         hf (NDArray[Any]): High-fidelity model output.
         lf_upskill (NDArray[Any]): Output of the upskilled low-fidelity model.
         out_path (str): Location to save the plot.
+        depth (bool): Whether the data is depth (true) or WSE (false)
 
     Returns:
         None
@@ -126,21 +129,22 @@ def performance_scatterplot(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDAr
     lf, hf, lf_upskill = lf.flatten(), hf.flatten(), lf_upskill.flatten()
 
     fig, axs = plt.subplots(ncols=2, figsize=(6.5, 4), sharey=True)
+    metric = "Depth" if depth else "WSE"
 
     axs[0].scatter(lf, hf, s=1, c=COMMON_COLORS[0], alpha=0.8)
     ll, ur = min([lf.min(), hf.min()]), max([lf.max(), hf.max()])
     axs[0].plot((ll, ur), (ll, ur), ls="dashed", c="k")
     rmse = np.mean((lf - hf) ** 2) ** 0.5
     axs[0].text(0.95, 0.05, f"rmse: {round(rmse, 2)}", ha="right", va="bottom", transform=axs[0].transAxes)
-    axs[0].set_ylabel("High-fidelity Model WSE (ft)")
-    axs[0].set_xlabel("Low-fidelity Model WSE (ft)")
+    axs[0].set_ylabel(f"High-fidelity Model {metric} (ft)")
+    axs[0].set_xlabel(f"Low-fidelity Model {metric} (ft)")
 
     axs[1].scatter(lf_upskill, hf, s=1, c=COMMON_COLORS[0], alpha=0.8)
     ll, ur = min([lf_upskill.min(), hf.min()]), max([lf_upskill.max(), hf.max()])
     axs[1].plot((ll, ur), (ll, ur), ls="dashed", c="k")
     rmse = np.mean((lf_upskill - hf) ** 2) ** 0.5
     axs[1].text(0.95, 0.05, f"rmse: {round(rmse, 2)}", ha="right", va="bottom", transform=axs[1].transAxes)
-    axs[1].set_xlabel("Upskilled Model WSE (ft)")
+    axs[1].set_xlabel(f"Upskilled Model {metric} (ft)")
     apply_formatting(fig, axs)
     fig.savefig(out_path)
     plt.close(fig)
