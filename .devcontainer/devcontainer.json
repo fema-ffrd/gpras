@@ -40,5 +40,6 @@
     },
     // avoid dubious ownership of the workspace folder https://www.kenmuse.com/blog/avoiding-dubious-ownership-in-dev-containers/
     "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
-    "postCreateCommand": "pre-commit install"
+    "postCreateCommand": "pre-commit install",
+    "runArgs": ["--env-file",".env"]
 }
