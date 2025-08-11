@@ -69,22 +69,9 @@ class GPRAS:
         y = y.astype(np.float64)
 
         # Initialize inducing points with kmeans
-        k_means = False
-        if k_means:
-            km = KMeans(n_clusters=round(x.shape[0] * inducing_fraction), random_state=0, n_init="auto")
-            km.fit(x)
-            inducing_variable = km.cluster_centers_.astype(np.float64)
-        else:
-            # step = int(1 / inducing_fraction)
-            # inducing_variable = x[::step, :]
-            n_inducing_points = round(x.shape[0] * inducing_fraction)
-            dim = x.shape[1]
-            inducing_variable = np.c_[np.linspace(x[:, 0].min(), x[:, 0].max(), n_inducing_points)]
-            for j in range(1, dim):
-                inducing_variable = np.c_[
-                    inducing_variable, np.linspace(x[:, j].min(), x[:, j].max(), n_inducing_points)
-                ]
-        ini_length = np.mean(np.abs(x))
+        km = KMeans(n_clusters=round(x.shape[0] * inducing_fraction), random_state=0, n_init="auto")
+        km.fit(x)
+        inducing_variable = km.cluster_centers_.astype(np.float64)
 
         # Define gpr training optimizer
 
@@ -92,30 +79,15 @@ class GPRAS:
         self.models = []
         for i in range(x.shape[1]):
             # Subset data & instantiate GPR
-            # y_i = y[:, i : i + 1]
             y_i = np.c_[y[:, i]]
-            # kernel_i = self.kernel()
-            # x_i = np.c_[x[:, i]]
-            # kernel_i.lengthscales.assign(ini_length)
-            # kernel_i.variance.assign(1)
-            kernel_i = gpflow.kernels.Exponential(variance=1, lengthscales=ini_length)
-            dim = x.shape[1]
-            inducing_variable = np.c_[np.linspace(x[:, 0].min(), x[:, 0].max(), n_inducing_points)]
-            for j in range(1, dim):
-                inducing_variable = np.c_[
-                    inducing_variable, np.linspace(x[:, j].min(), x[:, j].max(), n_inducing_points)
-                ]
+            kernel_i = self.kernel()
             model_i = SGPR(data=(x, y_i), kernel=kernel_i, inducing_variable=inducing_variable)
             options = {"maxiter": 500, "gtol": 1e-6, "ftol": 1e-9}
 
             # Optimize inducing points
-            # gpflow.set_trainable(kernel_i, False)
-            # gpflow.set_trainable(model_i.likelihood.variance, False)
-            # gpflow.set_trainable(model_i.inducing_variable, True)
             gpflow.set_trainable(model_i.kernel.variance, False)
             gpflow.set_trainable(model_i.kernel.lengthscales, False)
             gpflow.set_trainable(model_i.likelihood.variance, False)
-            model_i.likelihood.variance.assign(np.float64(0.00001))
 
             opt = gpflow.optimizers.Scipy()
 
@@ -128,12 +100,9 @@ class GPRAS:
             print("Number of iterations:", result.nit)
 
             # Optimize kernel and model parameters
-            # gpflow.set_trainable(kernel_i, True)
-            # gpflow.set_trainable(model_i.likelihood.variance, True)
-            # gpflow.set_trainable(model_i.inducing_variable, False)
             gpflow.set_trainable(model_i.kernel.variance, True)
             gpflow.set_trainable(model_i.kernel.lengthscales, True)
-            gpflow.set_trainable(model_i.likelihood.variance, False)
+            gpflow.set_trainable(model_i.likelihood.variance, True)
             gpflow.set_trainable(model_i.inducing_variable.Z, False)
 
             result = opt.minimize(
