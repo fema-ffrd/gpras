@@ -13,7 +13,7 @@ from shapely import Polygon
 
 from gpras.gpr import GPRAS, KernelType
 from gpras.metrics import export_metric_summary
-from gpras.preprocess import PreProcessor, RasExtracter
+from gpras.preprocess import PreProcessor, RasExtracter, RasReader
 from gpras.ras.model import RasModel
 from gpras.utils.plotting import ec_pairplot, ec_timeseries, performance_cdf, performance_scatterplot
 
@@ -103,6 +103,16 @@ class Config:
         """A subset of the model domain that the GPR should be fit for."""
         return gpd.read_file(self.area_of_interest_path).to_crs(self.hf_ras.crs).iloc[0].geometry
 
+    @cached_property
+    def training_data_db(self) -> str:
+        """Path to folder containing training data parquets."""
+        return str(Path(self.working_directory) / "data" / "training.db")
+
+    @cached_property
+    def testing_data_db(self) -> str:
+        """Path to folder containing testing data parquets."""
+        return str(Path(self.working_directory) / "data" / "testing.db")
+
 
 def main(config_path: str, testing: bool) -> None:
     """Automate the process of loading HEC-RAS model data, fitting the GPR, and making predictions."""
@@ -113,14 +123,17 @@ def main(config_path: str, testing: bool) -> None:
     if testing:  # Optional subsetting (faster)
         config.train_plans = config.train_plans[:2]
         config.test_plans = config.test_plans[:2]
-    extracter = RasExtracter(
-        hf_ras=config.hf_ras,
-        lf_ras=config.lf_ras,
-        mesh_id=config.mesh_id,
-        plans=config.train_plans,
-        area_of_interest=config.area_of_interest,
-        cell_id_field=config.cell_id_field,
-    )
+    if not Path(config.training_data_db).exists():
+        _extracter = RasExtracter(
+            hf_ras=config.hf_ras,
+            lf_ras=config.lf_ras,
+            mesh_id=config.mesh_id,
+            plans=config.train_plans,
+            area_of_interest=config.area_of_interest,
+            cell_id_field=config.cell_id_field,
+        )
+        _extracter.export_db(config.training_data_db)
+    extracter = RasReader(config.training_data_db)
     hf_data_df, lf_data_df = extracter.aligned_datasets
     hf_data = hf_data_df.values
     lf_data = lf_data_df.values
@@ -147,16 +160,19 @@ def main(config_path: str, testing: bool) -> None:
     # Load test data
     t4 = time.perf_counter()
     print("Loading and pre-processing test data")
-    test_extracter = RasExtracter(
-        config.hf_ras,
-        config.lf_ras,
-        config.mesh_id,
-        config.test_plans,
-        config.area_of_interest,
-        config.cell_id_field,
-        hf_resampler=extracter.hf_resampler,
-        lf_resampler=extracter.lf_resampler,
-    )
+    if not Path(config.testing_data_db).exists():
+        _extracter = RasExtracter(
+            config.hf_ras,
+            config.lf_ras,
+            config.mesh_id,
+            config.test_plans,
+            config.area_of_interest,
+            config.cell_id_field,
+            hf_resampler=extracter.hf_resampler,
+            lf_resampler=extracter.lf_resampler,
+        )
+        _extracter.export_db(config.testing_data_db)
+    test_extracter = RasReader(config.testing_data_db)
     hf_test_data_df, lf_test_data_df = test_extracter.aligned_datasets
     hf_test_data = hf_test_data_df.values
     lf_test_data = lf_test_data_df.values
@@ -212,22 +228,23 @@ def main(config_path: str, testing: bool) -> None:
     print(f" - {round(t6 - t5, 1)} seconds to make predictions")
     print(f" - {round(t7 - t6, 1)} seconds to measure accuracy and plot results")
 
-    # Make GIS layers TODO: debug this
+    # Make GIS layers
     print("Exporting GIS")
-    hf_geom = extracter.hf_geometry_aoi
-    lf_geom = extracter.lf_geometry_aoi
-    hf_geom["lf_cell_id"] = extracter.lf_resampler
-    hf_geom["wetness_class"] = reducer.wetness_classes
-    hf_geom["lf_hf_rmse"] = np.mean((lf_test_data - hf_test_data) ** 2, axis=0) ** 0.5
-    hf_geom["upskill_hf_rmse"] = np.mean((y_test_pred - hf_test_data) ** 2, axis=0) ** 0.5
-    for i in range(reducer.eofs.shape[0]):
-        x_full = np.empty(reducer.dry_indices.shape[0])
-        x_full[reducer.dry_indices] = np.nan
-        x_full[~reducer.dry_indices] = reducer.eofs[i, :]
-        hf_geom[f"EOF_{i}"] = x_full
-    hf_geom.to_file("qc.gpkg", layer="HF_cells")
-    lf_geom.to_file("qc.gpkg", layer="LF_cells")
+    if False:  # TODO: debug this
+        hf_geom = extracter.hf_geometry_aoi
+        lf_geom = extracter.lf_geometry_aoi
+        hf_geom["lf_cell_id"] = extracter.lf_resampler
+        hf_geom["wetness_class"] = reducer.wetness_classes
+        hf_geom["lf_hf_rmse"] = np.mean((lf_test_data - hf_test_data) ** 2, axis=0) ** 0.5
+        hf_geom["upskill_hf_rmse"] = np.mean((y_test_pred - hf_test_data) ** 2, axis=0) ** 0.5
+        for i in range(reducer.eofs.shape[0]):
+            x_full = np.empty(reducer.dry_indices.shape[0])
+            x_full[reducer.dry_indices] = np.nan
+            x_full[~reducer.dry_indices] = reducer.eofs[i, :]
+            hf_geom[f"EOF_{i}"] = x_full
+        hf_geom.to_file("qc.gpkg", layer="HF_cells")
+        lf_geom.to_file("qc.gpkg", layer="LF_cells")
 
 
 if __name__ == "__main__":
-    main("production/configurations/0.1.0/gpr_training.config.json", True)
+    main("production/configurations/0.1.0/gpr_training.config.json", False)

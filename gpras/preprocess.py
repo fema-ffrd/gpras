@@ -14,6 +14,12 @@ from sklearn.decomposition import PCA, IncrementalPCA
 
 from gpras.ras.model import RasModel
 
+DB_PATHS = {
+    "hf": "hf_ras.parquet",
+    "lf": "lf_ras.parquet",
+    "cell_info": "cell_info.parquet",
+}
+
 
 class RasExtracter:
     """Convenience class for extracting data from RAS models and aligning high and low fidelity model data."""
@@ -73,7 +79,7 @@ class RasExtracter:
             index = pd.MultiIndex.from_arrays([[p] * cutoff, range(cutoff)], names=["run", "t"])
             hf_df = pd.DataFrame(hf_data[:cutoff, :], columns=self.hf_resampler, index=index)
             hf_store.append(hf_df)
-            lf_df = pd.DataFrame(lf_data[:cutoff, :], columns=self.lf_resampler, index=index)
+            lf_df = pd.DataFrame(lf_data[:cutoff, :], columns=self.hf_resampler, index=index)
             lf_store.append(lf_df)
 
         hf_merged = pd.concat(hf_store)
@@ -114,6 +120,18 @@ class RasExtracter:
 
         self.hf_resampler = mesh_resampled[f"{self.cell_id_field}_1"].values
         self.lf_resampler = mesh_resampled[f"{self.cell_id_field}_2"].values
+
+    def export_db(self, out_path: str) -> None:
+        """Export hf and lf dataframes as well as cell area and cell elevation to parquet files."""
+        out_path_ = Path(out_path)
+        out_path_.mkdir(parents=True, exist_ok=True)
+        hf_data_df, lf_data_df = self.aligned_datasets
+        hf_data_df.to_parquet(out_path_ / DB_PATHS["hf"])
+        pd.DataFrame({"elevation": self.cell_elevations, "area": self.cell_areas}).to_parquet(
+            out_path_ / DB_PATHS["cell_info"], index=False
+        )
+        if hasattr(self, "lf_ras"):
+            lf_data_df.to_parquet(out_path_ / DB_PATHS["lf"])
 
     @cached_property
     def _hf_geometry_full(self) -> gpd.GeoDataFrame:
@@ -158,6 +176,38 @@ class RasExtracter:
         return cast(
             NDArray[Any], self.hf_ras.get_cell_minimum_elevation(self.plans[0], self.mesh_id)[self.hf_resampler]
         )
+
+
+class RasReader:
+    """Lightweight equivalent to RasExtracter that get data from database instead of models."""
+
+    def __init__(self, db_path: str):
+        """Construct class."""
+        self.db_path = Path(db_path)
+        self.lf_resampler = None
+        self.hf_resampler = None
+
+    @property
+    def aligned_datasets(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Trim WSE timeseries spatially and temporally."""
+        hf_df = pd.read_parquet(self.db_path / DB_PATHS["hf"])
+        lf_df = pd.read_parquet(self.db_path / DB_PATHS["lf"])
+        return hf_df, lf_df
+
+    @property
+    def cell_elevations(self) -> NDArray[Any]:
+        """Elevation of cells within the area of interest."""
+        return cast(NDArray[Any], self._cell_info["elevation"].values)
+
+    @property
+    def cell_areas(self) -> NDArray[Any]:
+        """Area of cells within the area of interest."""
+        return cast(NDArray[Any], self._cell_info["area"].values)
+
+    @cached_property
+    def _cell_info(self) -> pd.DataFrame:
+        """Read cell info table."""
+        return pd.read_parquet(self.db_path / DB_PATHS["cell_info"])
 
 
 class PreProcessor:
