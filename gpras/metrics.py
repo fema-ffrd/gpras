@@ -9,54 +9,75 @@ from numpy.typing import NDArray
 
 
 def export_metric_summary(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
+    x_all: NDArray[np.float64],
+    y_all: NDArray[np.float64],
     out_path: str | Path,
     depth_threshold: float = 0.5,
     t_tol: int = 0,
     v_tol: float = 0,
 ) -> None:
     """Export all metrics to a sqlite database."""
-    # Cache maximum timestep for efficiency
-    x_mts = np.argmax(x, axis=0)
-    y_mts = np.argmax(y, axis=0)
+    # Initialize lists for per-event dataframes.
+    all_scalar = []
+    all_timeseries = []
+    all_cells = []
 
-    # Scalar metrics
-    scalar_dict = {
-        "rmse_aoi_toi": [rmse_aoi_toi(x, y)],
-        "rmse_aoi_mts": [rmse_aoi_mts(x, y, x_mts, y_mts)],
-        "nse_aoi_mts": [nse_aoi_mts(x, y, x_mts, y_mts)],
-        "err_aoi_toi": [err_aoi_toi(x, y)],
-        "err_aoi_mts": [err_aoi_mts(x, y, x_mts, y_mts)],
-        "fi_aoi_toi": [fi_aoi_toi(x, y, t_tol, v_tol)],
-        "pod_mts": [pod_mts(x, y, depth_threshold, x_mts, y_mts)],
-        "rfa_mts": [rfa_mts(x, y, depth_threshold, x_mts, y_mts)],
-        "csi_mts": [csi_mts(x, y, depth_threshold, x_mts, y_mts)],
-        "f2_mts": [f2_mts(x, y, x_mts, y_mts)],
-        "f3_mts": [f3_mts(x, y, x_mts, y_mts)],
-    }
-    scalar_df = pd.DataFrame.from_dict(scalar_dict)
+    for event in x_all.index.unique(level=0):
+        # Subset to event
+        x = x_all.loc[event].values
+        y = y_all.loc[event].values
+        tsteps = x_all.loc[event].index.values
 
-    # Timeseries metrics
-    timeseries_dict = {
-        "rmse_aoi_ts": rmse_aoi_ts(x, y),
-        "err_aoi_ts": err_aoi_ts(x, y),
-    }
-    timeseries_df = pd.DataFrame.from_dict(timeseries_dict)
+        # Cache maximum timestep for efficiency
+        x_mts = np.argmax(x, axis=0)
+        y_mts = np.argmax(y, axis=0)
+        xdepth1 = (x[x_mts, np.arange(x.shape[1])] < 1).sum()
+        ydepth1 = (y[y_mts, np.arange(x.shape[1])] < 1).sum()
+        print(event)
+        print(f"-Number of cells w/ depth < 1 ft HF: {xdepth1}")
+        print(f"-Number of cells w/ depth < 1 ft LF_upskilled: {ydepth1}")
 
-    # Cell metrics
-    cell_dict = {
-        "rmse_cell_toi": rmse_cell_toi(x, y),
-        "err_cell_mts": err_cell_mts(x, y, x_mts, y_mts),
-        "err_cell_toi": err_cell_toi(x, y),
-    }
-    cell_df = pd.DataFrame.from_dict(cell_dict)
+        # Scalar metrics
+        scalar_dict = {
+            "event": event,
+            "rmse_aoi_toi": [rmse_aoi_toi(x, y)],
+            "rmse_aoi_mts": [rmse_aoi_mts(x, y, x_mts, y_mts)],
+            "nse_aoi_mts": [nse_aoi_mts(x, y, x_mts, y_mts)],
+            "err_aoi_toi": [err_aoi_toi(x, y)],
+            "err_aoi_mts": [err_aoi_mts(x, y, x_mts, y_mts)],
+            "fi_aoi_toi": [fi_aoi_toi(x, y, t_tol, v_tol)],
+            "pod_mts": [pod_mts(x, y, depth_threshold, x_mts, y_mts)],
+            "rfa_mts": [rfa_mts(x, y, depth_threshold, x_mts, y_mts)],
+            "csi_mts": [csi_mts(x, y, depth_threshold, x_mts, y_mts)],
+            "f2_mts": [f2_mts(x, y, x_mts, y_mts)],
+            "f3_mts": [f3_mts(x, y, x_mts, y_mts)],
+        }
+        all_scalar.append(pd.DataFrame.from_dict(scalar_dict))
+
+        # Timeseries metrics
+        timeseries_dict = {
+            "event": np.repeat(event, x.shape[0]),
+            "timestep": tsteps,
+            "rmse_aoi_ts": rmse_aoi_ts(x, y),
+            "err_aoi_ts": err_aoi_ts(x, y),
+        }
+        all_timeseries.append(pd.DataFrame.from_dict(timeseries_dict))
+
+        # Cell metrics
+        cell_dict = {
+            "event": np.repeat(event, x.shape[1]),
+            "cell_id": x_all.columns,
+            "rmse_cell_toi": rmse_cell_toi(x, y),
+            "err_cell_mts": err_cell_mts(x, y, x_mts, y_mts),
+            "err_cell_toi": err_cell_toi(x, y),
+        }
+        all_cells.append(pd.DataFrame.from_dict(cell_dict))
 
     # Export to sqlite
     with sqlite3.connect(out_path) as con:
-        scalar_df.to_sql("scalar_metrics", con, index=False, if_exists="replace")
-        timeseries_df.to_sql("timeseries_metrics", con, index=False, if_exists="replace")
-        cell_df.to_sql("cell_metrics", con, index=False, if_exists="replace")
+        pd.concat(all_scalar).to_sql("scalar_metrics", con, index=False, if_exists="replace")
+        pd.concat(all_timeseries).to_sql("timeseries_metrics", con, index=False, if_exists="replace")
+        pd.concat(all_cells).to_sql("cell_metrics", con, index=False, if_exists="replace")
 
 
 def rmse_aoi_toi(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
