@@ -16,14 +16,14 @@ FROM base AS dev
 
 RUN apt update
 
-# Install AWS CLI
+# # Install AWS CLI
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
     unzip awscliv2.zip && \
     ./aws/install
 
 RUN aws --version
 
-# Install git and python dev dependencies
+# # Install git and python dev dependencies
 RUN apt install -y git
 
 RUN pip install -e .[dev]

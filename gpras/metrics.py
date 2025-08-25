@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 def export_metric_summary(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
+    cell_ids: NDArray[np.int64],
     out_path: str | Path,
     depth_threshold: float = 0.5,
     t_tol: int = 0,
@@ -46,6 +47,7 @@ def export_metric_summary(
 
     # Cell metrics
     cell_dict = {
+        "cell_id": cell_ids,
         "rmse_cell_toi": rmse_cell_toi(x, y),
         "err_cell_mts": err_cell_mts(x, y, x_mts, y_mts),
         "err_cell_toi": err_cell_toi(x, y),
