@@ -118,6 +118,7 @@ class RasExtracter:
         mesh_resampled = mesh_resampled.drop_duplicates(subset=f"{self.cell_id_field}_1", keep="last")
         mesh_resampled = mesh_resampled[[f"{self.cell_id_field}_1", f"{self.cell_id_field}_2"]]
 
+        self.hf_mesh = hf_geom
         self.hf_resampler = mesh_resampled[f"{self.cell_id_field}_1"].values
         self.lf_resampler = mesh_resampled[f"{self.cell_id_field}_2"].values
 
@@ -177,6 +178,10 @@ class RasExtracter:
             NDArray[Any], self.hf_ras.get_cell_minimum_elevation(self.plans[0], self.mesh_id)[self.hf_resampler]
         )
 
+    @cached_property
+    def hf_mesh(self) -> gpd.GeoDataFrame:
+        """Get the high-fidelity mesh geometry."""
+        return self.hf_mesh
 
 class RasReader:
     """Lightweight equivalent to RasExtracter that get data from database instead of models."""

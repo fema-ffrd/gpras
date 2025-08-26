@@ -4,7 +4,7 @@
   "mesh_id": "bridgeport_1",
   "area_of_interest_path": "production/configurations/0.1.0/project_area.gpkg",
   "event_plan_path": "production/configurations/0.1.0/event_plans.json",
-  "wet_threshold_depth": 0.03,
+  "wet_threshold_depth": 1,
   "kernel": "Exponential",
   "inducing_fraction": 0.025,
   "working_directory": "data/bridgeport_gpr",

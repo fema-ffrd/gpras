@@ -15,7 +15,15 @@ from gpras.gpr import GPRAS, KernelType
 from gpras.metrics import export_metric_summary
 from gpras.preprocess import PreProcessor, RasExtracter, RasReader
 from gpras.ras.model import RasModel
-from gpras.utils.plotting import ec_pairplot, ec_timeseries, performance_cdf, performance_scatterplot
+from gpras.utils.plotting import (
+    ec_pairplot,
+    ec_timeseries,
+    map_detection_categories,
+    map_mesh_errors,
+    performance_cdf,
+    performance_scatterplot,
+    plot_timeseries_metrics,
+)
 
 
 class EventPlan(TypedDict):
@@ -137,6 +145,7 @@ def main(config_path: str, testing: bool) -> None:
     hf_data_df, lf_data_df = extracter.aligned_datasets
     hf_data = hf_data_df.values
     lf_data = lf_data_df.values
+    hf_mesh = _extracter.hf_mesh
 
     # Preprocess data
     t2 = time.perf_counter()
@@ -192,7 +201,9 @@ def main(config_path: str, testing: bool) -> None:
     # Assess performance
     t6 = time.perf_counter()
     print("Calculating metrics and making performance plots")
-    export_metric_summary(hf_test_data, y_test_pred, config.metric_dir / "performance_metrics.db")
+    export_metric_summary(
+        hf_test_data, y_test_pred, config.metric_dir / "performance_metrics.db"
+    )
     performance_scatterplot(
         lf_test_data,
         hf_test_data,
@@ -216,6 +227,48 @@ def main(config_path: str, testing: bool) -> None:
         y_test_pred_depth,
         config.plot_dir / "performance_scatterplot_depth.png",
         depth=True,
+    )
+
+    map_mesh_errors(
+        hf_mesh,
+        config.metric_dir / "performance_metrics.db",
+        config.plot_dir / "map_rmse.png",
+        error_field="rmse_cell_toi",
+        error_metric="RMSE",
+    )
+
+    map_mesh_errors(
+        hf_mesh,
+        config.metric_dir / "performance_metrics.db",
+        config.plot_dir / "map_mts_error.png",
+        error_field="err_cell_mts",
+        error_metric="Max Depth Error",
+    )
+
+    map_mesh_errors(
+        hf_mesh,
+        config.metric_dir / "performance_metrics.db",
+        config.plot_dir / "map_error.png",
+        error_field="err_cell_toi",
+        error_metric="Mean Error",
+    )
+
+    map_detection_categories(
+        hf_mesh,
+        hf_test_data_depth,
+        y_test_pred_depth,
+        output_plot_path=config.plot_dir / "map_detection.png",
+        include_correct_negative=True,
+        title="Detection Outcomes",
+        wet_threshold_depth=config.wet_threshold_depth
+    )
+
+    plot_timeseries_metrics(
+        config.metric_dir / "performance_metrics.db",
+        config.plot_dir / "timeseries_error.png",
+        metrics_field=["rmse_aoi_ts", "err_aoi_ts"],
+        metrics=["RMSE", "Mean Error"],
+        overlay=True,
     )
 
     # Print timing stats

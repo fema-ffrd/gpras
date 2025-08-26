@@ -24,8 +24,8 @@
                     "editor.codeActionsOnSave": {
                         "source.organizeImports": "explicit",
                         "source.fixAll": "explicit"
-                        }
-                    },
+                    }
+                },
                 "editor.rulers": [
                     120
                 ]
@@ -41,5 +41,11 @@
     // avoid dubious ownership of the workspace folder https://www.kenmuse.com/blog/avoiding-dubious-ownership-in-dev-containers/
     "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
     "postCreateCommand": "pre-commit install",
-    "runArgs": ["--env-file",".env"]
+    "runArgs": [
+        "--env-file",
+        ".env"
+    ],
+    "mounts": [
+        "source=E:\\Tools\\gpras\\data,target=/workspaces/gpras/data,type=bind,consistency=cached"
+    ]
 }

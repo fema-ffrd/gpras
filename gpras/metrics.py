@@ -9,8 +9,8 @@ from numpy.typing import NDArray
 
 
 def export_metric_summary(
-    x_all: NDArray[np.float64],
-    y_all: NDArray[np.float64],
+    x_all: pd.DataFrame,
+    y_all: pd.DataFrame,
     out_path: str | Path,
     depth_threshold: float = 0.5,
     t_tol: int = 0,
