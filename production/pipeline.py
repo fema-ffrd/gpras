@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any, Self, TypedDict, cast
 
 import geopandas as gpd
-import numpy as np
+import pandas as pd
 from shapely import Polygon
 
 from gpras.gpr import GPRAS, KernelType
 from gpras.metrics import export_metric_summary
-from gpras.preprocess import PreProcessor, RasExtracter, RasReader
+from gpras.preprocess import PreProcessor, RasReader, RasUpskillDataBuilder
 from gpras.ras.model import RasModel
 from gpras.utils.plotting import ec_pairplot, ec_timeseries, performance_cdf, performance_scatterplot
 
@@ -124,7 +124,7 @@ def main(config_path: str, testing: bool) -> None:
         config.train_plans = config.train_plans[:2]
         config.test_plans = config.test_plans[:2]
     if not Path(config.training_data_db).exists():
-        _extracter = RasExtracter(
+        _extracter = RasUpskillDataBuilder(
             hf_ras=config.hf_ras,
             lf_ras=config.lf_ras,
             mesh_id=config.mesh_id,
@@ -132,6 +132,7 @@ def main(config_path: str, testing: bool) -> None:
             area_of_interest=config.area_of_interest,
             cell_id_field=config.cell_id_field,
         )
+        _extracter._align_datasets(str(config.plot_dir / "temporal_clipping"))
         _extracter.export_db(config.training_data_db)
     extracter = RasReader(config.training_data_db)
     hf_data_df, lf_data_df = extracter.aligned_datasets
@@ -143,7 +144,6 @@ def main(config_path: str, testing: bool) -> None:
     print("Preprocessing data")
     reducer = PreProcessor(wet_threshold=config.wet_threshold_depth, depth=config.depth)
     reducer.fit(hf_data, extracter.cell_elevations, extracter.cell_areas, config.spatial_mode_count)
-    reducer.plot_pca_summary(config.plot_dir / "pca_summary.png")
     y = reducer.transform(hf_data)
     x = reducer.transform(lf_data)
 
@@ -161,7 +161,7 @@ def main(config_path: str, testing: bool) -> None:
     t4 = time.perf_counter()
     print("Loading and pre-processing test data")
     if not Path(config.testing_data_db).exists():
-        _extracter = RasExtracter(
+        _extracter = RasUpskillDataBuilder(
             config.hf_ras,
             config.lf_ras,
             config.mesh_id,
@@ -192,7 +192,6 @@ def main(config_path: str, testing: bool) -> None:
     # Assess performance
     t6 = time.perf_counter()
     print("Calculating metrics and making performance plots")
-    export_metric_summary(hf_test_data, y_test_pred, config.metric_dir / "performance_metrics.db")
     performance_scatterplot(
         lf_test_data,
         hf_test_data,
@@ -210,6 +209,11 @@ def main(config_path: str, testing: bool) -> None:
     lf_test_data_depth = reducer.wse_2_depth(lf_test_data)
     hf_test_data_depth = reducer.wse_2_depth(hf_test_data)
     y_test_pred_depth = reducer.wse_2_depth(y_test_pred)
+    export_metric_summary(
+        pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index),
+        pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index),
+        config.metric_dir / "performance_metrics.db",
+    )
     performance_scatterplot(
         lf_test_data_depth,
         hf_test_data_depth,
@@ -227,23 +231,6 @@ def main(config_path: str, testing: bool) -> None:
     print(f" - {round(t5 - t4, 1)} seconds to load and pre-process data from {len(config.test_plans)} plans")
     print(f" - {round(t6 - t5, 1)} seconds to make predictions")
     print(f" - {round(t7 - t6, 1)} seconds to measure accuracy and plot results")
-
-    # Make GIS layers
-    print("Exporting GIS")
-    if False:  # TODO: debug this
-        hf_geom = extracter.hf_geometry_aoi
-        lf_geom = extracter.lf_geometry_aoi
-        hf_geom["lf_cell_id"] = extracter.lf_resampler
-        hf_geom["wetness_class"] = reducer.wetness_classes
-        hf_geom["lf_hf_rmse"] = np.mean((lf_test_data - hf_test_data) ** 2, axis=0) ** 0.5
-        hf_geom["upskill_hf_rmse"] = np.mean((y_test_pred - hf_test_data) ** 2, axis=0) ** 0.5
-        for i in range(reducer.eofs.shape[0]):
-            x_full = np.empty(reducer.dry_indices.shape[0])
-            x_full[reducer.dry_indices] = np.nan
-            x_full[~reducer.dry_indices] = reducer.eofs[i, :]
-            hf_geom[f"EOF_{i}"] = x_full
-        hf_geom.to_file("qc.gpkg", layer="HF_cells")
-        lf_geom.to_file("qc.gpkg", layer="LF_cells")
 
 
 if __name__ == "__main__":

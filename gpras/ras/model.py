@@ -173,6 +173,12 @@ class RasModel(RASModelItem):  # type: ignore[misc]
         meshes = geom.mesh_cell_polygons()
         return meshes[meshes["mesh_name"] == mesh_id]
 
+    def get_precip_attributes(self, plan: str) -> dict[Any, Any]:
+        """Get attributes from a plan hdf precipitation information."""
+        plan_asset = self.plan_hdfs[plan]
+        mesh_path = "/Event Conditions/Meteorology/Precipitation"
+        return cast(dict[Any, Any], plan_asset.get_attrs(mesh_path))
+
 
 def add_file_to_prj_file(prj_path: str, file_row: str) -> None:
     """Add a plan suffix to a project file."""

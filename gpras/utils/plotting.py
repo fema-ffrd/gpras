@@ -175,3 +175,79 @@ def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any]
     apply_formatting(fig, ax)
     fig.savefig(out_path)
     plt.close(fig)
+
+
+def plot_pca_summary(
+    eigenvalues: NDArray[Any], n_samples_fit: int, spatial_mode_count: int, out_path: str | Path
+) -> None:
+    """Plot a summary of PCA eigenvalues with uncertainty and highlight number of selected modes."""
+    stderr = np.sqrt(2 / n_samples_fit) * eigenvalues
+    inds = np.arange(eigenvalues.shape[0])
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(inds, eigenvalues, c="k", label="Eigenvalues")
+    ax.fill_between(inds, eigenvalues - stderr, eigenvalues + stderr, color="gray", alpha=0.3, label="± Error")
+    ax.axvline(x=spatial_mode_count - 1, color="red", ls="--", label=f"Selected Modes ({spatial_mode_count})")
+
+    ax.set_xlabel("EOF Mode Index")
+    ax.set_ylabel("Cumulative Explained Variance")
+    ax.set_title("Variance Explained by EOF Modes")
+    ax.legend()
+    ax.grid(True)
+    apply_formatting(fig, ax)
+    fig.savefig(out_path)
+    plt.close(fig)
+
+
+def ec_timeseries_alt(
+    x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, x_labels: list[str], out_dir: str | Path
+) -> None:
+    """Plot EOF time series for low- and high-fidelity models by event plan (alt: all LF ECs on every plot)."""
+    events = np.unique(ind.get_level_values(0), return_counts=True)
+    cum_index = 0
+    for event_label, count in zip(*events, strict=False):
+        fig, axs = plt.subplots(nrows=modes_to_plot, figsize=(6.5, 2 * modes_to_plot), sharex=True)
+        for i, ax in enumerate(axs):
+            ax.plot(y[cum_index : cum_index + count, i], label="HF model", c="k", lw=2)
+            for j in range(x.shape[1]):
+                ax.plot(x[cum_index : cum_index + count, j], label=x_labels[j], alpha=0.6, lw=1)
+            ax.set_ylabel(f"EOF_{i}")
+            ax.set_yticks([], labels=[])
+        cum_index += count
+        axs[0].legend()
+        axs[-1].set_xlabel("Timestep")
+        fig.suptitle(f"Plan {event_label}")
+        apply_formatting(fig, axs)
+        fig.savefig(Path(out_dir) / f"Plan_{event_label}.png")
+        plt.close(fig)
+
+
+def ts_clipping(arr: NDArray[Any], cutoffs: tuple[int, int], out_path: str) -> None:
+    """Plot changes in WSE/feature value across timesteps and visualize what's clipped out."""
+    arr = arr[:, np.any(arr > 0, axis=0)]
+    dx_dt_max = np.quantile(arr, 0.99, axis=1)
+    dx_dt_ave = np.sum(arr, axis=1) / np.sum(arr)
+    cum_dx_dt = np.cumsum(arr, axis=0)
+    cum_dx_dt_max = np.quantile(cum_dx_dt, 0.01, axis=1)
+    cum_dx_dt_ave = np.sum(cum_dx_dt, axis=1) / cum_dx_dt.shape[1]
+
+    fig, axs = plt.subplots(nrows=2, figsize=(6.5, 4), sharex=True)
+
+    axs[0].plot(dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
+    axs[0].plot(dx_dt_ave, c="k", label="average")
+    axs[1].plot(cum_dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
+    axs[1].plot(cum_dx_dt_ave, c="k", label="average")
+    axs[0].axvline(cutoffs[0], ls="dashed", c="r")
+    axs[1].axvline(cutoffs[0], ls="dashed", c="r")
+    axs[0].axvline(cutoffs[1], ls="dashed", c="r")
+    axs[1].axvline(cutoffs[1], ls="dashed", c="r")
+
+    axs[1].set_xlabel("Timestep Index")
+    axs[0].set_ylabel("dx/dt")
+    axs[1].set_ylabel("CDF of dx/dt")
+    fig.suptitle("Changes in Cell/Feature Values")
+
+    axs[1].legend()
+    apply_formatting(fig, axs)
+    fig.savefig(out_path)
+    plt.close(fig)
