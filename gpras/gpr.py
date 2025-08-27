@@ -77,7 +77,7 @@ class GPRAS:
 
         # Train GPR models
         self.models = []
-        for i in range(x.shape[1]):
+        for i in range(y.shape[1]):
             # Subset data & instantiate GPR
             y_i = np.c_[y[:, i]]
             kernel_i = self.kernel()
