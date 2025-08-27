@@ -9,8 +9,8 @@ from numpy.typing import NDArray
 
 
 def export_metric_summary(
-    x_all: NDArray[np.float64],
-    y_all: NDArray[np.float64],
+    x_all: pd.DataFrame,
+    y_all: pd.DataFrame,
     out_path: str | Path,
     depth_threshold: float = 0.5,
     t_tol: int = 0,
@@ -31,11 +31,6 @@ def export_metric_summary(
         # Cache maximum timestep for efficiency
         x_mts = np.argmax(x, axis=0)
         y_mts = np.argmax(y, axis=0)
-        xdepth1 = (x[x_mts, np.arange(x.shape[1])] < 1).sum()
-        ydepth1 = (y[y_mts, np.arange(x.shape[1])] < 1).sum()
-        print(event)
-        print(f"-Number of cells w/ depth < 1 ft HF: {xdepth1}")
-        print(f"-Number of cells w/ depth < 1 ft LF_upskilled: {ydepth1}")
 
         # Scalar metrics
         scalar_dict = {
