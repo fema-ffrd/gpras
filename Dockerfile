@@ -9,7 +9,7 @@ ADD . .
 RUN pip install -i https://test.pypi.org/simple/ hecdss
 RUN python -c "from hecdss import download_hecdss"
 RUN apt-get update
-RUN apt-get install libgfortran5
+RUN apt-get install -y libgfortran5
 
 ### Make development container ###
 FROM base AS dev
