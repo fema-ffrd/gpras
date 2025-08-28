@@ -66,6 +66,8 @@ class DataBuilder:
         self.hf_resampler = hf_resampler
         self.set_spatial_resamplers()  # Does not overwrite
         self.cutoffs = cutoffs or {}
+        self._hf_aligned: pd.DataFrame | None = None
+        self._lf_aligned: pd.DataFrame | None = None
 
     def _align_datasets(self, plot_dir: str | None = None) -> None:
         hf_store = []
@@ -380,7 +382,7 @@ class RasUpskillDataBuilder(DataBuilder):
     def cell_info_df(self) -> pd.DataFrame:
         """A dataframe with elevations and areas of the model cells within the area of interest."""
         df = super().cell_info_df
-        df["hf_cell_id"] = self.lf_resampler
+        df["lf_cell_id"] = self.lf_resampler
         return df
 
 
