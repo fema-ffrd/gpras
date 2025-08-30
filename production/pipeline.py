@@ -9,6 +9,7 @@ from typing import Any, Self, TypedDict, cast
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 from shapely import Polygon
 
 from gpras.gpr import GPRAS, KernelType
@@ -22,7 +23,9 @@ from gpras.utils.plotting import (
     map_mesh_errors,
     performance_cdf,
     performance_scatterplot,
+    plot_eof_maps,
     plot_timeseries_metrics,
+    summary_plots,
 )
 
 
@@ -60,6 +63,8 @@ class Config:
 
         Path(self.plot_dir).mkdir(exist_ok=True, parents=True)
         (Path(self.plot_dir) / "ec_timeseries").mkdir(exist_ok=True, parents=True)
+        (Path(self.plot_dir) / "error_maps").mkdir(exist_ok=True, parents=True)
+        (Path(self.plot_dir) / "error_timeseries").mkdir(exist_ok=True, parents=True)
         Path(self.model_dir).mkdir(exist_ok=True, parents=True)
         Path(self.metric_dir).mkdir(exist_ok=True, parents=True)
 
@@ -145,7 +150,7 @@ def main(config_path: str, testing: bool) -> None:
     hf_data_df, lf_data_df = extracter.aligned_datasets
     hf_data = hf_data_df.values
     lf_data = lf_data_df.values
-    hf_mesh = _extracter.hf_mesh
+    hf_mesh = extracter.hf_mesh
 
     # Preprocess data
     t2 = time.perf_counter()
@@ -155,6 +160,9 @@ def main(config_path: str, testing: bool) -> None:
     reducer.plot_pca_summary(config.plot_dir / "pca_summary.png")
     y = reducer.transform(hf_data)
     x = reducer.transform(lf_data)
+    wet_cells_bool = ~reducer.dry_indices
+    wet_cell_ids = hf_mesh[config.cell_id_field][wet_cells_bool].tolist()
+    eofs = reducer.eof
 
     ec_pairplot(x, y, 5, config.plot_dir / "pairplot.png")
     ec_timeseries(x, y, 5, hf_data_df.index, config.plot_dir / "ec_timeseries")
@@ -197,19 +205,25 @@ def main(config_path: str, testing: bool) -> None:
     y_test_pred = reducer.reverse_transform(mean_pred)
     if config.depth:
         y_test_pred += reducer.elevations
+    assert y_test_pred.shape == hf_test_data_df.shape
+    y_test_pred_df = pd.DataFrame(y_test_pred, index=hf_test_data_df.index, columns=hf_test_data_df.columns)
+    y_test_pred_df.iloc[:, :] = y_test_pred
 
     # Assess performance
     t6 = time.perf_counter()
     print("Calculating metrics and making performance plots")
+
     export_metric_summary(
-        hf_test_data, y_test_pred, config.metric_dir / "performance_metrics.db"
+        hf_test_data_df, y_test_pred_df, config.metric_dir / "performance_metrics.db"
     )
+
     performance_scatterplot(
         lf_test_data,
         hf_test_data,
         y_test_pred,
         config.plot_dir / "performance_scatterplot.png",
     )
+
     performance_cdf(
         lf_test_data,
         hf_test_data,
@@ -221,6 +235,7 @@ def main(config_path: str, testing: bool) -> None:
     lf_test_data_depth = reducer.wse_2_depth(lf_test_data)
     hf_test_data_depth = reducer.wse_2_depth(hf_test_data)
     y_test_pred_depth = reducer.wse_2_depth(y_test_pred)
+
     performance_scatterplot(
         lf_test_data_depth,
         hf_test_data_depth,
@@ -232,7 +247,8 @@ def main(config_path: str, testing: bool) -> None:
     map_mesh_errors(
         hf_mesh,
         config.metric_dir / "performance_metrics.db",
-        config.plot_dir / "map_rmse.png",
+        config.plot_dir / "error_maps",
+        suffix="rmse",
         error_field="rmse_cell_toi",
         error_metric="RMSE",
     )
@@ -240,7 +256,8 @@ def main(config_path: str, testing: bool) -> None:
     map_mesh_errors(
         hf_mesh,
         config.metric_dir / "performance_metrics.db",
-        config.plot_dir / "map_mts_error.png",
+        config.plot_dir / "error_maps",
+        suffix="mts_error",
         error_field="err_cell_mts",
         error_metric="Max Depth Error",
     )
@@ -248,7 +265,8 @@ def main(config_path: str, testing: bool) -> None:
     map_mesh_errors(
         hf_mesh,
         config.metric_dir / "performance_metrics.db",
-        config.plot_dir / "map_error.png",
+        config.plot_dir / "error_maps",
+        suffix="mean_error",
         error_field="err_cell_toi",
         error_metric="Mean Error",
     )
@@ -257,20 +275,43 @@ def main(config_path: str, testing: bool) -> None:
         hf_mesh,
         hf_test_data_depth,
         y_test_pred_depth,
-        output_plot_path=config.plot_dir / "map_detection.png",
+        hf_test_data_df.index.values,
+        hf_test_data_df.columns.values,
+        output_plot_path=config.plot_dir / "error_maps",
         include_correct_negative=True,
-        title="Detection Outcomes",
         wet_threshold_depth=config.wet_threshold_depth
     )
 
     plot_timeseries_metrics(
         config.metric_dir / "performance_metrics.db",
-        config.plot_dir / "timeseries_error.png",
+        config.plot_dir / "error_timeseries",
         metrics_field=["rmse_aoi_ts", "err_aoi_ts"],
         metrics=["RMSE", "Mean Error"],
         overlay=True,
     )
 
+    summary_plots(
+        config.metric_dir / "performance_metrics.db",
+        config.plot_dir,
+        metrics={
+            "cell_metrics": {
+                "rmse_cell_toi": "Spatial RMSE",
+                "err_cell_mts": "Spatial Mean Error (Max)",
+                "err_cell_toi": "Spatial Mean Error",
+            },
+            "scalar_metrics": {
+                "nse_aoi_mts": "NSE",
+                "err_aoi_mts": "Max Error",
+                "fi_aoi_toi": "Fidelity Index",
+            },
+            "timeseries_metrics": {
+                "rmse_aoi_ts": "Temporal RMSE",
+                "err_aoi_ts": "Temporal Mean Error"
+            }
+        },
+    )
+
+    plot_eof_maps(eofs, wet_cell_ids, hf_mesh, config.plot_dir, n_modes=3, cell_id_field=config.cell_id_field, cmap='viridis')
     # Print timing stats
     t7 = time.perf_counter()
     print(f"Finished whole process in {round(t6 - t1, 1)} seconds")
@@ -300,4 +341,4 @@ def main(config_path: str, testing: bool) -> None:
 
 
 if __name__ == "__main__":
-    main("production/configurations/0.1.0/gpr_training.config.json", False)
+    main("production/configurations/0.1.0/gpr_training.config.json", True)

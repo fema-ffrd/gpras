@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
-from shapely import Polygon
+from shapely.geometry import Polygon
 from sklearn.decomposition import PCA, IncrementalPCA
 
 from gpras.ras.model import RasModel
@@ -51,6 +51,8 @@ class RasExtracter:
         else:
             self.hf_resampler = hf_resampler
             self.lf_resampler = lf_resampler
+            # Ensure mesh is available even when resamplers are provided externally
+            self._hf_mesh = self.hf_geometry_aoi
         self.cutoffs = cutoffs or {}
 
     @cached_property
@@ -117,20 +119,31 @@ class RasExtracter:
         mesh_resampled = mesh_resampled.sort_values(by="area")
         mesh_resampled = mesh_resampled.drop_duplicates(subset=f"{self.cell_id_field}_1", keep="last")
         mesh_resampled = mesh_resampled[[f"{self.cell_id_field}_1", f"{self.cell_id_field}_2"]]
+        order = hf_geom[self.cell_id_field]
+        mesh_resampled = mesh_resampled.set_index(f"{self.cell_id_field}_1").loc[order].reset_index()
 
-        self.hf_mesh = hf_geom
         self.hf_resampler = mesh_resampled[f"{self.cell_id_field}_1"].values
         self.lf_resampler = mesh_resampled[f"{self.cell_id_field}_2"].values
-
+        self._hf_mesh = self.hf_geometry_aoi
+ 
     def export_db(self, out_path: str) -> None:
         """Export hf and lf dataframes as well as cell area and cell elevation to parquet files."""
         out_path_ = Path(out_path)
         out_path_.mkdir(parents=True, exist_ok=True)
         hf_data_df, lf_data_df = self.aligned_datasets
         hf_data_df.to_parquet(out_path_ / DB_PATHS["hf"])
-        pd.DataFrame({"elevation": self.cell_elevations, "area": self.cell_areas}).to_parquet(
-            out_path_ / DB_PATHS["cell_info"], index=False
+        # Write cell info as GeoParquet for compatibility with gpd.read_parquet
+        cell_gdf = gpd.GeoDataFrame(
+            {
+                "cell_id": self.hf_mesh[self.cell_id_field].values,
+                "elevation": self.cell_elevations,
+                "area": self.cell_areas,
+                "geometry": self.hf_mesh.geometry.values,
+            },
+            geometry="geometry",
+            crs=self.hf_mesh.crs,
         )
+        cell_gdf.to_parquet(out_path_ / DB_PATHS["cell_info"], index=False)
         if hasattr(self, "lf_ras"):
             lf_data_df.to_parquet(out_path_ / DB_PATHS["lf"])
 
@@ -178,10 +191,10 @@ class RasExtracter:
             NDArray[Any], self.hf_ras.get_cell_minimum_elevation(self.plans[0], self.mesh_id)[self.hf_resampler]
         )
 
-    @cached_property
+    @property
     def hf_mesh(self) -> gpd.GeoDataFrame:
         """Get the high-fidelity mesh geometry."""
-        return self.hf_mesh
+        return self._hf_mesh
 
 class RasReader:
     """Lightweight equivalent to RasExtracter that get data from database instead of models."""
@@ -212,8 +225,13 @@ class RasReader:
     @cached_property
     def _cell_info(self) -> pd.DataFrame:
         """Read cell info table."""
-        return pd.read_parquet(self.db_path / DB_PATHS["cell_info"])
+        # Read as GeoDataFrame to match GeoParquet; numeric columns still accessible
+        return gpd.read_parquet(self.db_path / DB_PATHS["cell_info"])
 
+    @cached_property
+    def hf_mesh(self) -> gpd.GeoDataFrame:
+        """Get the high-fidelity mesh geometry."""
+        return gpd.read_parquet(self.db_path / DB_PATHS["cell_info"])
 
 class PreProcessor:
     """Class to transform HEC-RAS data for use in upskilling low-fidelity (lf) models to high-fidelity (hf)."""
@@ -282,6 +300,17 @@ class PreProcessor:
         if self.wetness_classes is None:
             raise ValueError("wetness_classes must be numpy array to access dry_indices")
         return np.equal(self.wetness_classes, "AD")
+    
+    @property
+    def eof(self) -> NDArray[Any]:
+        """Get the Empirical Orthogonal Functions (EOFs).
+
+        Returns:
+            NDArray[Any]: Array of EOFs.
+        """
+        if self.eofs is None:
+            raise ValueError("EOFs have not been computed")
+        return self.eofs
 
     def fit(
         self,

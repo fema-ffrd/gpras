@@ -50,7 +50,12 @@ def apply_formatting(fig: Figure, ax: Axes | Sequence[Axes]) -> None:
     fig.tight_layout()
 
 
-def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: str | Path) -> None:
+def ec_pairplot(
+    x: NDArray[Any], 
+    y: NDArray[Any], 
+    modes_to_plot: int, 
+    out_path: str | Path
+) -> None:
     """Generate a Seaborn pairplot comparing low-fidelity and high-fidelity EOF mode values.
 
     This plot is useful for assesing how closely LF modes are to HF modes (diagonal plots).
@@ -82,10 +87,16 @@ def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: 
         max_val = max(x_max, y_max)
         ax.plot([min_val, max_val], [min_val, max_val], color="k", linestyle="--", linewidth=2.5)
     apply_formatting(g.figure, g.axes.flatten())
-    g.savefig(out_path)
+    g.savefig(Path(out_path))
 
 
-def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, out_dir: str | Path) -> None:
+def ec_timeseries(
+    x: NDArray[Any], 
+    y: NDArray[Any], 
+    modes_to_plot: int, 
+    ind: pd.Index, 
+    out_dir: str | Path
+) -> None:
     """Plot EOF time series for low- and high-fidelity models by event plan.
 
     Args:
@@ -117,7 +128,11 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.
 
 
 def performance_scatterplot(
-    lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path, depth: bool = False
+    lf: NDArray[Any], 
+    hf: NDArray[Any], 
+    lf_upskill: NDArray[Any], 
+    out_path: str | Path,
+    depth: bool = False
 ) -> None:
     """Plot scatterplots comparing low-fidelity vs high-fidelity and upskilled vs high-fidelity models depth estimates.
 
@@ -151,11 +166,16 @@ def performance_scatterplot(
     axs[1].text(0.95, 0.05, f"rmse: {round(rmse, 2)}", ha="right", va="bottom", transform=axs[1].transAxes)
     axs[1].set_xlabel(f"Upskilled Model {metric} (ft)")
     apply_formatting(fig, axs)
-    fig.savefig(out_path)
+    fig.savefig(Path(out_path))
     plt.close(fig)
 
 
-def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path) -> None:
+def performance_cdf(
+    lf: NDArray[Any], 
+    hf: NDArray[Any], 
+    lf_upskill: NDArray[Any], 
+    out_path: str | Path
+) -> None:
     """Plot cumulative distribution of absolute error for low-fidelity and upskilled models.
 
     Args:
@@ -178,7 +198,7 @@ def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any]
     ax.set_xlabel("Absolute Error Less Than (ft)")
     ax.legend()
     apply_formatting(fig, ax)
-    fig.savefig(out_path)
+    fig.savefig(Path(out_path))
     plt.close(fig)
 
 
@@ -186,6 +206,7 @@ def map_mesh_errors(
     mesh_df: gpd.GeoDataFrame,
     error_db_path: str | Path,
     output_plot_path: str | Path,
+    suffix: str,
     error_field: str = "rmse_cell_toi",
     error_metric: str = "RMSE"
 ) -> gpd.GeoDataFrame:
@@ -205,7 +226,7 @@ def map_mesh_errors(
 
     cell_ids = mesh_df["cell_id"].tolist()
     placeholders = ",".join(["?" for _ in cell_ids])
-    query = f"SELECT cell_id, {error_field} FROM cell_metrics WHERE cell_id IN ({placeholders})"
+    query = f"SELECT event, cell_id, {error_field} FROM cell_metrics WHERE cell_id IN ({placeholders})"
 
     with sqlite3.connect(error_db_path) as conn:
         # Validate column exists
@@ -218,11 +239,27 @@ def map_mesh_errors(
 
     merged_df = mesh_df.merge(error_df, on="cell_id", how="left")
     merged_df["error_value"] = merged_df[error_field].fillna(0)
-
-    map_errors(merged_df, output_plot_path, error_metric)
+    
+    # map for each event
+    colormap_limits = (merged_df["error_value"].min(), merged_df["error_value"].max())
+    events = merged_df["event"].unique()
+    for event in events:
+        map_errors(
+            merged_df[merged_df["event"] == event], 
+            Path(output_plot_path) / f"{suffix}_{event}.png",
+            error_metric, 
+            event, 
+            colormap_limits
+        )
     return merged_df
 
-def map_errors(merged_df: gpd.GeoDataFrame, output_plot_path: str | Path, error_metric: str) -> None:
+def map_errors(
+    merged_df: gpd.GeoDataFrame, 
+    output_plot_path: str | Path, 
+    error_metric: str, 
+    event: str, 
+    colormap_limits: tuple[float, float]
+) -> None:
     """Create error map using matplotlib.
 
     Parameters:
@@ -255,7 +292,8 @@ def map_errors(merged_df: gpd.GeoDataFrame, output_plot_path: str | Path, error_
         raise ValueError("No polygon patches could be constructed from 'merged_df'.")
     p = PatchCollection(patches, alpha=0.8)
     p.set_array(np.array(colors, dtype=float))
-    
+    p.set_clim(*colormap_limits)  # Set color limits
+
     # Add patches to plot
     ax.add_collection(p)
     
@@ -267,14 +305,13 @@ def map_errors(merged_df: gpd.GeoDataFrame, output_plot_path: str | Path, error_
     ax.set_aspect('equal')
     ax.autoscale_view()
 
-    plt.title(f'{error_metric} Map', fontsize=16, fontweight='bold')
+    plt.title(f'{error_metric} Map - {event}', fontsize=16, fontweight='bold')
     plt.xlabel('X coordinate')
     plt.ylabel('Y coordinate')
     plt.tight_layout()
     # plt.show()
-    plt.savefig(output_plot_path)
-    # plt.close(fig)
-
+    plt.savefig(Path(output_plot_path))
+    plt.close(fig)
 
 def plot_timeseries_metrics(
     db_path: str | Path,
@@ -282,7 +319,7 @@ def plot_timeseries_metrics(
     metrics_field: Sequence[str] | None = None,
     metrics: Sequence[str] | None = None,
     overlay: bool = False,
-) -> pd.DataFrame:
+) -> None:
     """Plot timeseries error metrics stored in the performance metrics database.
 
     Reads the 'timeseries_metrics' table created by `export_metric_summary` and plots
@@ -298,7 +335,7 @@ def plot_timeseries_metrics(
                  If False (default), create one subplot per metric (stacked rows).
 
     Returns:
-        The DataFrame of timeseries metrics that were plotted.
+        None
     """
     db_path = Path(db_path)
     if not db_path.exists():  # pragma: no cover - guard clause
@@ -328,43 +365,205 @@ def plot_timeseries_metrics(
     if not plot_cols:
         raise ValueError("No metrics_field to plot after filtering.")
 
-    # Build figure / axes
-    if overlay:
-        fig, ax = plt.subplots(figsize=(6.5, 4))
-        axs: list[Axes] = [ax]
-        for i, col in enumerate(plot_cols):
-            if metrics is not None:
-                ax.plot(ts_df.index, ts_df[col], label=metrics[i])
-            else:
-                ax.plot(ts_df.index, ts_df[col], label=col)
-        ax.set_xlabel("Timestep")
-        ax.set_ylabel("Metric Value")
-        ax.legend()
-    else:
-        fig, axs_arr = plt.subplots(nrows=len(plot_cols), figsize=(6.5, 2.2 * len(plot_cols)), sharex=True)
-        # Ensure iterable of axes
-        axs = list(axs_arr.ravel()) if isinstance(axs_arr, np.ndarray) else [axs_arr]
-        for ax, col in zip(axs, plot_cols, strict=False):
-            ax.plot(ts_df.index, ts_df[col], c=COMMON_COLORS[0])
-            ax.set_ylabel(col)
-        axs[-1].set_xlabel("Timestep")
+    # list of events
+    events = ts_df['event'].unique().tolist()
+    
+    # plot limits
+    y_limits = (np.floor(ts_df[plot_cols].min().min()), np.ceil(ts_df[plot_cols].max().max()))
+    for event in events:
+        event_mask = ts_df['event'] == event
+        event_df = ts_df[event_mask]
+        # Build figure / axes
+        if overlay:
+            fig, ax = plt.subplots(figsize=(6.5, 4))
+            axs: list[Axes] = [ax]
+            for i, col in enumerate(plot_cols):
+                if metrics is not None:
+                    ax.plot(event_df.index, event_df[col], label=metrics[i])
+                else:
+                    ax.plot(event_df.index, event_df[col], label=col)
+            ax.set_xlabel("Timestep")
+            ax.set_ylabel("Metric Value")
+            ax.legend()
+        else:
+            fig, axs_arr = plt.subplots(nrows=len(plot_cols), figsize=(6.5, 2.2 * len(plot_cols)), sharex=True)
+            axs = list(axs_arr.ravel()) if isinstance(axs_arr, np.ndarray) else [axs_arr]
+            for ax, col in zip(axs, plot_cols, strict=False):
+                ax.plot(event_df.index, event_df[col], c=COMMON_COLORS[0])
+                ax.set_ylabel(col)
+            axs[-1].set_xlabel("Timestep")
 
-    fig.suptitle("Timeseries Error Metrics")
-    apply_formatting(fig, axs)
-    fig.savefig(out_path)
+        fig.suptitle(f"Timeseries Error Metrics - {event}")
+        ax.set_ylim(y_limits)
+        apply_formatting(fig, axs)
+        fig.savefig(Path(out_path) / f"error_ts_{event}.png")
+        plt.close(fig)
+
+def summary_plots(
+    db_path: str | Path,
+    out_path: str | Path,
+    metrics: dict[str, dict[str, str]],
+) -> None:
+    """Generates and saves boxplot summary plots for specified metrics from a SQLite database.
+
+    This function reads a table named 'scalar_metrics' from the provided SQLite database,
+    extracts the specified metric fields for each unique event, and creates boxplots
+    summarizing the distribution of each metric across events. Each plot is saved as a PNG
+    file in the specified output directory.
+
+    Parameters:
+        db_path: Path to `performance_metrics.db` (SQLite database).
+        out_path: Path to save the output plot (e.g., PNG).
+        metrics (dict[str, dict[str, str]]): Dictionary mapping metric fields to their labels.
+
+    Notes:
+        - Each plot is saved as 'summary_<column>.png' in the output directory.
+        - The function assumes that the 'event' column exists in the metrics tables.
+
+    Returns:
+        None
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        raise FileNotFoundError(f"Database not found: {db_path}")
+
+    with sqlite3.connect(db_path) as conn:
+        # Verify table exists
+        tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table'", conn)
+        if "cell_metrics" not in tables["name"].tolist():
+            raise ValueError(
+                "Table 'cell_metrics' not found in database. Available tables: "
+                f"{tables['name'].tolist()}"
+            )
+        cell_df = pd.read_sql_query("SELECT * FROM cell_metrics", conn)
+
+        # list of events
+        events = cell_df['event'].unique().tolist()
+
+        # Error Plots
+        for table in metrics:
+            df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+            for metrics_field, metrics_label in metrics[table].items():
+                fig, ax = plt.subplots(figsize=(6.5, 4))
+                if len(df) == len(events):
+                    sorted_events = events.copy()
+                    sorted_events.sort()
+                    ax.scatter(sorted_events, df.sort_values(by='event')[metrics_field])
+                    ax.grid()
+                else:
+                    ax.boxplot([df[df['event']==event][metrics_field] for event in events], labels=events)
+                plt.xticks(rotation=45)
+                ax.set_ylabel(metrics_label)
+                ax.set_title(f"{metrics_label} for Testing Dataset")
+                fig.tight_layout()
+                fig.savefig(Path(out_path) / f"summary_{table}_{metrics_field}.png")
+                plt.close(fig)
+        
+        # Number of Time Steps
+        timeseries_df = pd.read_sql_query("SELECT * FROM timeseries_metrics", conn)
+        fig, ax = plt.subplots(figsize=(6.5, 4))
+        ax.bar(sorted_events, [len(timeseries_df[timeseries_df['event'] == event]) for event in sorted_events])
+        plt.xticks(rotation=45)
+        ax.set_ylabel("Number of Time Steps")
+        ax.set_title("Number of Time Steps for Testing Dataset")
+        fig.tight_layout()
+        fig.savefig(Path(out_path) / "summary_timeseries.png")
+        plt.close(fig)
+
+def plot_spatial_eof(
+    plot_dir: str | Path,
+    eof_vector: NDArray[Any], 
+    mode: int, 
+    wet_cell_ids: NDArray[Any], 
+    mesh_df: gpd.GeoDataFrame, 
+    cell_id_field: str = 'cell_id', 
+    title: str = 'Spatial EOF Pattern', 
+    cmap: str = 'seismic', 
+    shared_vmax: float | None = None
+) -> None:
+    """Plot a single spatial EOF pattern using cell polygons from mesh_df.
+
+    Parameters:
+    - plot_dir: Directory to save the plot
+    - eof_vector: 1D numpy array of size (n_wet_cells,) for one EOF mode
+    - wet_cell_ids: 1D numpy array of cell ids where EOF values go in the mesh_df
+    - mesh_df: GeoDataFrame containing mesh information (e.g., cell geometry)
+    - title: plot title
+    - cmap: colormap to use
+    - shared_vmax: if provided, uses same scale for all plots
+    """
+    # Map EOF_vector values to the corresponding cell polygons in mesh_df
+    mesh_df = mesh_df.copy()
+    mesh_df['EOF_value'] = 0  # Initialize with zeros
+    mesh_df['EOF_value'] = mesh_df['EOF_value'].astype(float)
+    mesh_df.set_index(cell_id_field, inplace=True)
+    mesh_df.loc[wet_cell_ids, 'EOF_value'] = eof_vector
+
+    vmax = shared_vmax if shared_vmax is not None else np.max(np.abs(eof_vector))  # symmetric color scale
+
+    # Plot using polygons
+    fig, ax = plt.subplots(figsize=(10, 8))
+    mesh_df.plot(
+        column='EOF_value',
+        cmap=cmap,
+        vmin=-vmax,
+        vmax=vmax,
+        legend=True,
+        ax=ax,
+        legend_kwds={'label': 'EOF Amplitude'}
+    )
+
+    ax.set_title(title, fontsize=16, fontweight='bold')
+    ax.set_xlabel('X coordinate')
+    ax.set_ylabel('Y coordinate')
+    plt.tight_layout()
+    # plt.show()
+    plt.savefig(Path(plot_dir) / f"eof_{mode}.png")
     plt.close(fig)
-    return ts_df[plot_cols]
+
+def plot_eof_maps(
+    eofs: NDArray[Any], 
+    wet_cell_ids: NDArray[Any], 
+    mesh_df: gpd.GeoDataFrame, 
+    plot_dir: str | Path,
+    n_modes: int = 3, 
+    cell_id_field: str = 'cell_id', 
+    cmap: str = 'seismic'
+) -> None:
+    """Plot the first n EOF modes using a consistent color scale.
+
+    Parameters:
+    - eofs: 2D array (n_modes, n_wet_cells)
+    - wet_cell_ids: 1D array of wet cell ids
+    - mesh_df: GeoDataFrame containing mesh information (e.g., cell geometry)
+    - n_modes: how many EOF modes to plot
+    - cmap: colormap
+    """
+    shared_vmax = np.max(np.abs(eofs[:n_modes, :]))
+    for i in range(n_modes):
+        plot_spatial_eof(
+            plot_dir=Path(plot_dir),
+            eof_vector=eofs[i, :],
+            mode=i+1,
+            wet_cell_ids=wet_cell_ids,
+            mesh_df=mesh_df,
+            cell_id_field=cell_id_field,
+            title=f'Spatial EOF Mode {i+1}',
+            cmap=cmap,
+            shared_vmax=shared_vmax,
+        )
 
 
 def map_detection_categories(
     mesh_df: gpd.GeoDataFrame,
     y_true: NDArray[Any],
     y_pred: NDArray[Any],
+    index: NDArray[Any],
+    columns: NDArray[Any],
     output_plot_path: str | Path,
     include_correct_negative: bool = False,
-    title: str = "Detection Outcomes",
     wet_threshold_depth: float = 0.0
-) -> gpd.GeoDataFrame:
+) -> None:
     """Create a map showing Detected, Miss, and False Alarm categories per cell for the maximum depth (peak).
 
     A cell is classified using (optionally) the maximum value over time for true and predicted arrays:
@@ -380,103 +579,122 @@ def map_detection_categories(
                  matching cell_id values corresponding to columns in y arrays.
         y_true: 2D array (timesteps, cells) OR 1D array (cells). Values must be >= 0.
         y_pred: 2D array (timesteps, cells) OR 1D array (cells). Values must be >= 0.
+        index: NDArray[Any] representing the index (event).
+        columns: NDArray[Any] representing the column names (cell IDs).
         output_plot_path: Path to save output PNG.
         include_correct_negative: Whether to display cells where both are zero as a separate category.
         title: Title for the plot.
 
     Returns:
-        GeoDataFrame with an added 'detection_category' column.
+        None
     """
-    true_cell_vals = y_true.max(axis=0) if y_true.ndim == 2 else y_true
-    pred_cell_vals = y_pred.max(axis=0) if y_pred.ndim == 2 else y_pred
+    # convert the true and predicted data to dataframe
+    df_true = pd.DataFrame(y_true, index=pd.MultiIndex.from_tuples(index), columns=columns)
+    df_pred = pd.DataFrame(y_pred, index=pd.MultiIndex.from_tuples(index), columns=columns)
 
-    # cells < wet_threshold_depth are considered "inactive"
+    # create the list of events
+    # events = set(t[0] for t in index)
+    events = {t[0] for t in index}
+    events = set(events)
+    for event in events:
 
-    if true_cell_vals.shape[0] != pred_cell_vals.shape[0]:
-        raise ValueError("y_true and y_pred must have the same number of cells.")
+        # Example: filter rows where first element of index tuple == 'some_value'
+        mask = df_true.index.get_level_values(0) == event
+        filtered_true = df_true[mask]
+        filtered_pred = df_pred[mask]
 
-    if (true_cell_vals < 0).any() or (pred_cell_vals < 0).any():
-        raise ValueError("y_true and y_pred must be non-negative.")
+        true_cell_vals = filtered_true.max(axis=0) if y_true.ndim == 2 else y_true
+        pred_cell_vals = filtered_pred.max(axis=0) if y_pred.ndim == 2 else y_pred
 
-    # Apply wet threshold
-    true_cell_vals[true_cell_vals < wet_threshold_depth] = 0
-    pred_cell_vals[pred_cell_vals < wet_threshold_depth] = 0
+        true_cell_vals = true_cell_vals.sort_index()
+        pred_cell_vals = pred_cell_vals.sort_index()
+        mesh_df = mesh_df.sort_values(by='cell_id')
+        # cells < wet_threshold_depth are considered "inactive"
 
-    # Attempt to align by cell_id if present and lengths differ
-    if true_cell_vals.shape[0] != len(mesh_df):
-        # If mesh_df has a 'cell_id' and values correspond to ordering elsewhere, we assume ordering mismatch.
-        # For now enforce same length.
-        raise ValueError(
-            "Number of cells in mesh_df does not match length of y arrays: "
-            f"{len(mesh_df)} vs {true_cell_vals.shape[0]}"
-        )
+        if true_cell_vals.shape[0] != pred_cell_vals.shape[0]:
+            raise ValueError("y_true and y_pred must have the same number of cells.")
 
-    detected_mask = (true_cell_vals > 0) & (pred_cell_vals > 0)
-    miss_mask = (true_cell_vals > 0) & (pred_cell_vals == 0)
-    false_alarm_mask = (true_cell_vals == 0) & (pred_cell_vals > 0)
-    correct_neg_mask = (true_cell_vals == 0) & (pred_cell_vals == 0)
+        if (true_cell_vals < 0).any() or (pred_cell_vals < 0).any():
+            raise ValueError("y_true and y_pred must be non-negative.")
 
-    categories = np.full(true_cell_vals.shape[0], "", dtype=object)
-    categories[detected_mask] = "Detected"
-    categories[miss_mask] = "Miss"
-    categories[false_alarm_mask] = "False Alarm"
-    if include_correct_negative:
-        categories[correct_neg_mask] = "Correct Negative"
+        # Apply wet threshold
+        true_cell_vals[true_cell_vals < wet_threshold_depth] = 0
+        pred_cell_vals[pred_cell_vals < wet_threshold_depth] = 0
 
-    mesh_df = mesh_df.copy()
-    mesh_df["detection_category"] = categories
+        # Attempt to align by cell_id if present and lengths differ
+        if true_cell_vals.shape[0] != len(mesh_df):
+            # If mesh_df has a 'cell_id' and values correspond to ordering elsewhere, we assume ordering mismatch.
+            # For now enforce same length.
+            raise ValueError(
+                "Number of cells in mesh_df does not match length of y arrays: "
+                f"{len(mesh_df)} vs {true_cell_vals.shape[0]}"
+            )
 
-    # Define colors
-    color_map = {
-        "Detected": "#009E73",       # green
-        "Miss": "#D55E00",           # orange/red
-        "False Alarm": "#E69F00",    # gold
-        "Correct Negative": "#999999",  # gray
-        "": "#FFFFFF",  # empty (should not normally appear)
-    }
-    # Colors per cell used implicitly when building facecolors list
+        detected_mask = (true_cell_vals > 0) & (pred_cell_vals > 0)
+        miss_mask = (true_cell_vals > 0) & (pred_cell_vals == 0)
+        false_alarm_mask = (true_cell_vals == 0) & (pred_cell_vals > 0)
+        correct_neg_mask = (true_cell_vals == 0) & (pred_cell_vals == 0)
 
-    # Build plot
-    fig, ax = plt.subplots(figsize=(12, 8))
-    patches = []
-    facecolors = []
-    for _, row in mesh_df.iterrows():
-        geom = row["geometry"]
-        if geom is None:
-            continue
-        if geom.geom_type == "Polygon":
-            polys = [geom]
-        elif geom.geom_type == "MultiPolygon":
-            polys = list(geom.geoms)
-        else:
-            continue
-        for poly in polys:
-            exterior = np.asarray(poly.exterior.coords)
-            patches.append(MplPolygon(exterior, closed=True))
-            facecolors.append(color_map[row["detection_category"]])
+        categories = np.full(true_cell_vals.shape[0], "", dtype=object)
+        categories[detected_mask] = "Detected"
+        categories[miss_mask] = "Miss"
+        categories[false_alarm_mask] = "False Alarm"
+        if include_correct_negative:
+            categories[correct_neg_mask] = "Correct Negative"
 
-    if not patches:
-        raise ValueError("No polygon patches could be constructed from 'mesh_df'.")
+        mesh_df = mesh_df.copy()
+        mesh_df["detection_category"] = categories
 
-    collection = PatchCollection(patches, facecolor=facecolors, edgecolor="#333333", linewidths=0.3, alpha=0.9)
-    ax.add_collection(collection)
-    ax.set_aspect("equal")
-    ax.autoscale_view()
-    ax.set_xlabel("X coordinate")
-    ax.set_ylabel("Y coordinate")
-    ax.set_title(title)
+        # Define colors
+        color_map = {
+            "Detected": "#009E73",       # green
+            "Miss": "#D55E00",           # orange/red
+            "False Alarm": "#E69F00",    # gold
+            "Correct Negative": "#999999",  # gray
+            "": "#FFFFFF",  # empty (should not normally appear)
+        }
+        # Colors per cell used implicitly when building facecolors list
 
-    # Legend (only for categories present)
-    legend_handles = []
-    for label in ["Detected", "Miss", "False Alarm", "Correct Negative"]:
-        if label == "Correct Negative" and not include_correct_negative:
-            continue
-        if label in mesh_df["detection_category"].values:
-            legend_handles.append(Patch(facecolor=color_map[label], edgecolor="#333333", label=label))
-    if legend_handles:
-        ax.legend(handles=legend_handles, frameon=False, loc="upper right")
+        # Build plot
+        fig, ax = plt.subplots(figsize=(12, 8))
+        patches = []
+        facecolors = []
+        for _, row in mesh_df.iterrows():
+            geom = row["geometry"]
+            if geom is None:
+                continue
+            if geom.geom_type == "Polygon":
+                polys = [geom]
+            elif geom.geom_type == "MultiPolygon":
+                polys = list(geom.geoms)
+            else:
+                continue
+            for poly in polys:
+                exterior = np.asarray(poly.exterior.coords)
+                patches.append(MplPolygon(exterior, closed=True))
+                facecolors.append(color_map[row["detection_category"]])
 
-    apply_formatting(fig, ax)
-    fig.savefig(output_plot_path)
-    plt.close(fig)
-    return mesh_df
+        if not patches:
+            raise ValueError("No polygon patches could be constructed from 'mesh_df'.")
+
+        collection = PatchCollection(patches, facecolor=facecolors, edgecolor="#333333", linewidths=0.3, alpha=0.9)
+        ax.add_collection(collection)
+        ax.set_aspect("equal")
+        ax.autoscale_view()
+        ax.set_xlabel("X coordinate")
+        ax.set_ylabel("Y coordinate")
+        ax.set_title(f"Detection Outcomes - {event}")
+
+        # Legend (only for categories present)
+        legend_handles = []
+        for label in ["Detected", "Miss", "False Alarm", "Correct Negative"]:
+            if label == "Correct Negative" and not include_correct_negative:
+                continue
+            if label in mesh_df["detection_category"].values:
+                legend_handles.append(Patch(facecolor=color_map[label], edgecolor="#333333", label=label))
+        if legend_handles:
+            ax.legend(handles=legend_handles, frameon=False, loc="upper right")
+
+        apply_formatting(fig, ax)
+        fig.savefig(Path(output_plot_path) / f"detection_{event}.png")
+        plt.close(fig)
