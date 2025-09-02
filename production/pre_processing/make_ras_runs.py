@@ -348,7 +348,12 @@ def make_runs_from_selected_events(settings_path: str) -> None:
         settings.plan_short_id = f"gpr{ind}"
         # add_run(settings)
         out_dict.append(
-            {"plan_title": settings.plan_title, "event_number": asset["event_id"], "type": asset["roles"][0]}
+            {
+                "plan_title": settings.plan_title,
+                "event_number": asset["event_id"],
+                "type": asset["roles"][0],
+                "set": asset["properties"]["Set"],
+            }
         )
 
     with open(out_path, mode="w") as f:
