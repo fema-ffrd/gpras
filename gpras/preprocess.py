@@ -486,7 +486,8 @@ class RasReader:
     @cached_property
     def _cell_info(self) -> pd.DataFrame:
         """Read cell info table."""
-        return pd.read_parquet(self.db_path / DB_PATHS["cell_info"])
+        # Read as GeoDataFrame to match GeoParquet; numeric columns still accessible
+        return gpd.read_parquet(self.db_path / DB_PATHS["cell_info"])
 
     @staticmethod
     def is_valid(db_path: str) -> bool:
@@ -567,6 +568,17 @@ class PreProcessor:
         if self.wetness_classes is None:
             raise ValueError("wetness_classes must be numpy array to access dry_indices")
         return np.equal(self.wetness_classes, "AD")
+
+    @property
+    def eof(self) -> NDArray[Any]:
+        """Get the Empirical Orthogonal Functions (EOFs).
+
+        Returns:
+            NDArray[Any]: Array of EOFs.
+        """
+        if self.eofs is None:
+            raise ValueError("EOFs have not been computed")
+        return self.eofs
 
     def fit(
         self,
