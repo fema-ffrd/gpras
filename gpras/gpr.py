@@ -219,11 +219,6 @@ class GPRAS:
         opt = OPTIMIZERS[optimization_method]
         for i in self.models:
             opt(i, **opt_kwargs)
-            # self._optimize_adam(i)
-            # self._multi_start_gradient_descent(i)
-            # self._optimize_differential_evolutions(i, 5, 500)
-            # self._optimize_two_stage(i, max_iter=500)
-            print(i.training_loss().numpy())
 
     def _init_models(
         self,
