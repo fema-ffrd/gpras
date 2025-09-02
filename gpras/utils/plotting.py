@@ -45,7 +45,13 @@ def apply_formatting(fig: Figure, ax: Axes | Sequence[Axes]) -> None:
     fig.tight_layout()
 
 
-def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: str | Path) -> None:
+def ec_pairplot(
+    x: NDArray[Any],
+    y: NDArray[Any],
+    modes_to_plot: int,
+    out_path: str | Path,
+    inducing_points: NDArray[Any] | None = None,
+) -> None:
     """Generate a Seaborn pairplot comparing low-fidelity and high-fidelity EOF mode values.
 
     This plot is useful for assesing how closely LF modes are to HF modes (diagonal plots).
@@ -57,6 +63,7 @@ def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: 
         y (NDArray[Any]): High-fidelity EOF coefficients with shape (n_samples, n_modes).
         modes_to_plot (int): Number of EOF modes to include in the plot.
         out_path (str): Location to save the plot.
+        inducing_points (NDArray[Any], optional): Fitted inducing point for the sparse GPR (n_pts, n_modes).
 
     Returns:
         None
@@ -76,6 +83,12 @@ def ec_pairplot(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, out_path: 
         min_val = min(x_min, y_min)
         max_val = max(x_max, y_max)
         ax.plot([min_val, max_val], [min_val, max_val], color="k", linestyle="--", linewidth=2.5)
+
+    if inducing_points is not None:
+        for i in range(len(x_cols)):
+            for j in range(len(y_cols)):
+                ax = g.axes[i, j]
+                ax.scatter(inducing_points[:, j], inducing_points[:, i], alpha=0.6, color="red", marker="x", s=100)
     apply_formatting(g.figure, g.axes.flatten())
     g.savefig(out_path)
 
