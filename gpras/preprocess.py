@@ -1,8 +1,11 @@
 """Tools to wrangle HEC-RAS data into a format usable by the gaussian process regression model."""
 
+import os
+import pickle
 from functools import cached_property
+from os import PathLike
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, Self, cast
 
 import geopandas as gpd
 import numpy as np
@@ -17,6 +20,8 @@ from sklearn.decomposition import PCA, IncrementalPCA
 from gpras.ras.model import RasModel
 from gpras.utils.plotting import ts_clipping
 from gpras.utils.spatial_utils import ras_hdf_precip_transform
+
+HydraulicParameterType = Literal["wse", "depth", "velocity"]
 
 DB_PATHS = {
     "hf": "hf_ras.parquet",
@@ -86,7 +91,7 @@ class DataBuilder:
                     self._plot_cutoff_diagnostic(combo_df.values, self.cutoffs[p], str(Path(plot_dir) / f"{p}.png"))
             cutoff = self.cutoffs[p]
             dur = cutoff[1] - cutoff[0]
-            ts = np.arange(cutoff[0], cutoff[1])
+            ts = np.arange(0, dur)
 
             # Format
             index = pd.MultiIndex.from_arrays([[p] * dur, ts], names=["run", "t"])
@@ -333,13 +338,19 @@ class RasUpskillDataBuilder(DataBuilder):
 
     def get_lf_plan_data(self, plan: str) -> pd.DataFrame:
         """Get water surface elevation timeseries from a HEC-RAS model."""
-        dt_index = self.get_unsteady_timeseries_index(plan)
+        dt_index = self.get_lf_unsteady_timeseries_index(plan)
         asset = self.lf_ras.plan_hdfs[plan]
         vals: NDArray[Any] = asset.mesh_timeseries_output(self.mesh_id, "Water Surface").values
         vals = vals[:, self.lf_resampler]
         mask = vals < self.cell_elevations
         vals[mask] = np.repeat(self.cell_elevations[:, np.newaxis], vals.shape[0], axis=1).T[mask]
         return pd.DataFrame(vals, index=dt_index, columns=self.hf_resampler)
+
+    def get_lf_unsteady_timeseries_index(self, plan: str) -> pd.Series:
+        """Get an index for all unsteady timeseries."""
+        asset = self.lf_ras.plan_hdfs[plan]
+        timesteps = asset.get(self.UNSTEADY_TIME_INDEX_PATH)[:].astype(str)
+        return pd.to_datetime(timesteps, format="%d%b%Y %H:%M:%S")
 
     def set_spatial_resamplers(self) -> None:
         """Set the index arrays that are used to resample LF to HF."""
@@ -477,6 +488,15 @@ class RasReader:
         """Read cell info table."""
         return pd.read_parquet(self.db_path / DB_PATHS["cell_info"])
 
+    @staticmethod
+    def is_valid(db_path: str) -> bool:
+        """Check if a db file has all required tables."""
+        if not os.path.exists(db_path):
+            return False
+        files = os.listdir(db_path)
+        needed = ["cell_info.parquet", "hf_ras.parquet", "lf_ras.parquet", "ref_lines.parquet"]
+        return all(i in files for i in needed)
+
 
 class PreProcessor:
     """Class to transform HEC-RAS data for use in upskilling low-fidelity (lf) models to high-fidelity (hf)."""
@@ -487,7 +507,7 @@ class PreProcessor:
         input_mean: NDArray[Any] | None = None,
         wet_threshold: float = 0.03,
         elevations: NDArray[Any] | None = None,
-        depth: bool = False,
+        hydraulic_paramter: HydraulicParameterType = "wse",
         wetness_classes: NDArray[Any] | None = None,
         weights: NDArray[Any] | None = None,
         eofs: NDArray[Any] | None = None,
@@ -505,7 +525,7 @@ class PreProcessor:
             input_mean (NDArray[Any] | None, optional): Mean values for centering input data. Defaults to None.
             wet_threshold (float, optional): Threshold for determining whether a cell gets wet. Defaults to 0.03.
             elevations (NDArray[Any] | None, optional): Elevation values for the cells. Defaults to None.
-            depth (bool, optional): Whether output data should be depths or WSE. Defaults to False.
+            hydraulic_paramter (HydraulicParameterType, optional): Treat inputs as WSE, depth, or velocity. Defaults to WSE.
             wetness_classes (NDArray[Any] | None, optional): Wetness classification of cells. Defaults to None.
             weights (NDArray[Any] | None, optional): Weighting factors for the cells (typically cell area). Defaults to None.
             eofs (NDArray[Any] | None, optional): Empirical Orthogonal Functions (EOFs) from PCA. Defaults to None.
@@ -519,21 +539,23 @@ class PreProcessor:
         """
         self.spatial_mode_count: int = spatial_mode_count
 
-        self.input_mean: NDArray[Any] = input_mean or np.empty(0, dtype=float)
+        self.input_mean: NDArray[Any] = input_mean if input_mean is not None else np.empty(0, dtype=float)
 
         self.wet_threshold = wet_threshold
-        self.elevations: NDArray[Any] = elevations or np.empty(0, dtype=float)
-        self.depth = depth
-        self.wetness_classes: NDArray[np.str_] = wetness_classes or np.empty(0, dtype=np.str_)
+        self.elevations: NDArray[Any] = elevations if elevations is not None else np.empty(0, dtype=float)
+        self.hydraulic_paramter = hydraulic_paramter
+        self.wetness_classes: NDArray[np.str_] = (
+            wetness_classes if wetness_classes is not None else np.empty(0, dtype=np.str_)
+        )
 
-        self.weights: NDArray[Any] = weights or np.empty(0, dtype=float)
+        self.weights: NDArray[Any] = weights if weights is not None else np.empty(0, dtype=float)
 
-        self.eofs: NDArray[Any] = eofs or np.empty(0, dtype=float)
-        self.eigenvalues: NDArray[Any] = eigenvalues or np.empty(0, dtype=float)
+        self.eofs: NDArray[Any] = eofs if eofs is not None else np.empty(0, dtype=float)
+        self.eigenvalues: NDArray[Any] = eigenvalues if eigenvalues is not None else np.empty(0, dtype=float)
         self.n_samples_fit = n_samples_fit
 
-        self.x_mean: NDArray[Any] = x_mean or np.empty(0, dtype=float)
-        self.x_std: NDArray[Any] = x_std or np.empty(0, dtype=float)
+        self.x_mean: NDArray[Any] = x_mean if x_mean is not None else np.empty(0, dtype=float)
+        self.x_std: NDArray[Any] = x_std if x_std is not None else np.empty(0, dtype=float)
 
     @property
     def dry_indices(self) -> NDArray[np.bool_]:
@@ -569,10 +591,10 @@ class PreProcessor:
         """
         # Filter cells that are always dry or always wet
         self.elevations = elevations
-        if self.depth:
+        if self.hydraulic_paramter == "depth":
             x = self.wse_2_depth(x)
             self.wetness_classes = self.classify_wetness_depth(x)
-        else:
+        elif self.hydraulic_paramter == "wse":
             self.wetness_classes = self.classify_wetness_wse(x, elevations)
         x = x[:, ~self.dry_indices]
 
@@ -618,7 +640,7 @@ class PreProcessor:
             NDArray[Any]: Array of transformed data in EOF space (samples, spatial_mode_count).
         """
         # Filter cells that are always dry or always wet
-        if self.depth:
+        if self.hydraulic_paramter == "depth":
             x = self.wse_2_depth(x)
         x = x[:, ~self.dry_indices].copy()
 
@@ -661,7 +683,7 @@ class PreProcessor:
             x /= self.weights
         x += self.input_mean
         x_full = np.empty((x.shape[0], self.dry_indices.shape[0]))
-        if self.depth:
+        if self.hydraulic_paramter == "depth":
             x_full[:, self.dry_indices] = 0
         else:
             x_full[:, self.dry_indices] = self.elevations[self.dry_indices]
@@ -706,6 +728,35 @@ class PreProcessor:
         classes[max_depth > self.wet_threshold] = "TF"  # Transitionally Flooded
         classes[min_depth > self.wet_threshold] = "AF"  # Always Flooded
         return classes
+
+    def to_dict(self) -> dict[str, Any]:
+        """Dictionary representation of class for serialization."""
+        return {
+            "spatial_mode_count": self.spatial_mode_count,
+            "wet_threshold": self.wet_threshold,
+            "hydraulic_paramter": self.hydraulic_paramter,
+            "elevations": self.elevations,
+            "wetness_classes": self.wetness_classes,
+            "input_mean": self.input_mean,
+            "weights": self.weights,
+            "eofs": self.eofs,
+            "eigenvalues": self.eigenvalues,
+            "n_samples_fit": self.n_samples_fit,
+            "x_mean": self.x_mean,
+            "x_std": self.x_std,
+        }
+
+    def to_file(self, out_path: str | PathLike[str]) -> None:
+        """Save dict representation of self to file."""
+        with open(out_path, mode="wb") as f:
+            pickle.dump(self.to_dict(), f)
+
+    @classmethod
+    def from_file(cls, in_path: str | PathLike[str]) -> Self:
+        """Deserialize instance of self from a file representation."""
+        with open(in_path, mode="rb") as f:
+            d = pickle.load(f)
+        return cls(**d)
 
 
 class BoundaryConditionPreProcessor:
