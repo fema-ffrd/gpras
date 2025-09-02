@@ -23,8 +23,8 @@ KERNEL_FACTORY = {
     "Matern32": gpflow.kernels.Matern32,
     "Matern52": gpflow.kernels.Matern52,
     "RBF": gpflow.kernels.SquaredExponential,
-    "Linear": gpflow.kernels.Linear,
-    "Polynomial": gpflow.kernels.Polynomial,
+    "Linear": gpflow.kernels.Linear,  # currently not working with optimizers
+    "Polynomial": gpflow.kernels.Polynomial,  # currently not working with optimizers
     "Periodic": gpflow.kernels.Periodic,
     "Exponential": gpflow.kernels.Exponential,
     # Add more kernels as needed
@@ -247,6 +247,7 @@ class GPRAS:
             model = SGPR(data=(x, y_i), kernel=kernel_i, inducing_variable=inducing)
 
             # Set priors to avoid pathological models (hopefully)
+            # TODO: investigate making this generic across kernels with model.kernel.parameters
             model.kernel.variance.prior = tfp.distributions.LogNormal(gpflow.utilities.to_default_float(0), 1.0)
             model.kernel.lengthscales.prior = tfp.distributions.LogNormal(gpflow.utilities.to_default_float(0), 1.0)
             model.likelihood.variance.prior = tfp.distributions.LogNormal(gpflow.utilities.to_default_float(0), 1.0)
