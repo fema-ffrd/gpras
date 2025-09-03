@@ -256,7 +256,11 @@ def f2_mts(
     c = np.sum(
         (x[x_mts, np.arange(x.shape[1])] >= depth_threshold) * (y[y_mts, np.arange(y.shape[1])] < depth_threshold)
     )
-    return float((a - c) / (a + b + c))
+    denom = a + b + c
+    if denom == 0:
+        return 1
+    else:
+        return float((a - c) / (a + b + c))
 
 
 def f3_mts(
@@ -280,4 +284,8 @@ def f3_mts(
     c = np.sum(
         (x[x_mts, np.arange(x.shape[1])] >= depth_threshold) * (y[y_mts, np.arange(y.shape[1])] < depth_threshold)
     )
-    return float((a - b) / (a + b + c))
+    denom = a + b + c
+    if denom == 0:
+        return 1
+    else:
+        return float((a - b) / (a + b + c))
