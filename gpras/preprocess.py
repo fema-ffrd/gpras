@@ -24,11 +24,11 @@ from gpras.utils.spatial_utils import ras_hdf_precip_transform
 HydraulicParameterType = Literal["wse", "depth", "velocity"]
 
 DB_PATHS = {
-    "hf": "hf_ras.parquet",
-    "lf": "lf_ras.parquet",
-    "cell_info": "cell_info.parquet",
+    "hf": "hf_model.parquet",
+    "lf": "lf_model.parquet",
+    "cell_info": "cell_info.geoparquet",
     "ref_lines": "ref_lines.parquet",
-}  # TODO: Rename these to be generic across approaches.
+}
 
 
 class DataBuilder:
@@ -172,13 +172,14 @@ class DataBuilder:
         self.aligned_ref_line_df.to_parquet(out_path_ / DB_PATHS["ref_lines"])
 
     @cached_property
-    def cell_info_df(self) -> pd.DataFrame:
+    def cell_info_df(self) -> gpd.GeoDataFrame:
         """A dataframe with elevations and areas of the model cells within the area of interest."""
-        return pd.DataFrame(
+        return gpd.GeoDataFrame(
             {
                 "hf_cell_id": self.hf_resampler,
                 "elevation": self.cell_elevations,
                 "area": self.cell_areas,
+                "geometry": self.hf_geometry_aoi.geometry,
             }
         )
 
@@ -489,13 +490,20 @@ class RasReader:
         # Read as GeoDataFrame to match GeoParquet; numeric columns still accessible
         return gpd.read_parquet(self.db_path / DB_PATHS["cell_info"])
 
+    @cached_property
+    def hf_geometry_aoi(self) -> gpd.GeoDataFrame:
+        """Geometry for the high-fidelity model within the area of interest."""
+        gdf = self._cell_info.copy()
+        gdf["cell_id"] = gdf["hf_cell_id"]  # TODO: figure out a way to not hard code cell_id
+        return gdf
+
     @staticmethod
     def is_valid(db_path: str) -> bool:
         """Check if a db file has all required tables."""
         if not os.path.exists(db_path):
             return False
         files = os.listdir(db_path)
-        needed = ["cell_info.parquet", "hf_ras.parquet", "lf_ras.parquet", "ref_lines.parquet"]
+        needed = DB_PATHS.values()
         return all(i in files for i in needed)
 
 
@@ -508,7 +516,7 @@ class PreProcessor:
         input_mean: NDArray[Any] | None = None,
         wet_threshold: float = 0.03,
         elevations: NDArray[Any] | None = None,
-        hydraulic_paramter: HydraulicParameterType = "wse",
+        hydraulic_parameter: HydraulicParameterType = "wse",
         wetness_classes: NDArray[Any] | None = None,
         weights: NDArray[Any] | None = None,
         eofs: NDArray[Any] | None = None,
@@ -526,7 +534,7 @@ class PreProcessor:
             input_mean (NDArray[Any] | None, optional): Mean values for centering input data. Defaults to None.
             wet_threshold (float, optional): Threshold for determining whether a cell gets wet. Defaults to 0.03.
             elevations (NDArray[Any] | None, optional): Elevation values for the cells. Defaults to None.
-            hydraulic_paramter (HydraulicParameterType, optional): Treat inputs as WSE, depth, or velocity. Defaults to WSE.
+            hydraulic_parameter (HydraulicParameterType, optional): Treat inputs as WSE, depth, or velocity. Defaults to WSE.
             wetness_classes (NDArray[Any] | None, optional): Wetness classification of cells. Defaults to None.
             weights (NDArray[Any] | None, optional): Weighting factors for the cells (typically cell area). Defaults to None.
             eofs (NDArray[Any] | None, optional): Empirical Orthogonal Functions (EOFs) from PCA. Defaults to None.
@@ -544,7 +552,7 @@ class PreProcessor:
 
         self.wet_threshold = wet_threshold
         self.elevations: NDArray[Any] = elevations if elevations is not None else np.empty(0, dtype=float)
-        self.hydraulic_paramter = hydraulic_paramter
+        self.hydraulic_parameter = hydraulic_parameter
         self.wetness_classes: NDArray[np.str_] = (
             wetness_classes if wetness_classes is not None else np.empty(0, dtype=np.str_)
         )
@@ -603,10 +611,10 @@ class PreProcessor:
         """
         # Filter cells that are always dry or always wet
         self.elevations = elevations
-        if self.hydraulic_paramter == "depth":
+        if self.hydraulic_parameter == "depth":
             x = self.wse_2_depth(x)
             self.wetness_classes = self.classify_wetness_depth(x)
-        elif self.hydraulic_paramter == "wse":
+        elif self.hydraulic_parameter == "wse":
             self.wetness_classes = self.classify_wetness_wse(x, elevations)
         x = x[:, ~self.dry_indices]
 
@@ -652,7 +660,7 @@ class PreProcessor:
             NDArray[Any]: Array of transformed data in EOF space (samples, spatial_mode_count).
         """
         # Filter cells that are always dry or always wet
-        if self.hydraulic_paramter == "depth":
+        if self.hydraulic_parameter == "depth":
             x = self.wse_2_depth(x)
         x = x[:, ~self.dry_indices].copy()
 
@@ -695,7 +703,7 @@ class PreProcessor:
             x /= self.weights
         x += self.input_mean
         x_full = np.empty((x.shape[0], self.dry_indices.shape[0]))
-        if self.hydraulic_paramter == "depth":
+        if self.hydraulic_parameter == "depth":
             x_full[:, self.dry_indices] = 0
         else:
             x_full[:, self.dry_indices] = self.elevations[self.dry_indices]
@@ -746,7 +754,7 @@ class PreProcessor:
         return {
             "spatial_mode_count": self.spatial_mode_count,
             "wet_threshold": self.wet_threshold,
-            "hydraulic_paramter": self.hydraulic_paramter,
+            "hydraulic_parameter": self.hydraulic_parameter,
             "elevations": self.elevations,
             "wetness_classes": self.wetness_classes,
             "input_mean": self.input_mean,
