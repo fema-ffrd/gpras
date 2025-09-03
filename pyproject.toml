@@ -14,8 +14,12 @@ authors = [
   { name = "Rosemary Cyriac", email = "Rosemary.Cyriac@atkinsrealis.com" },
 ]
 dependencies = [
-  "gpflow==2.9.2",
-  "rashdf==0.7.2"
+  "gpflow",
+  "rashdf",
+  "hecstac",
+  "scikit-learn",
+  "chardet",
+  "seaborn"
 ]
 
 [project.optional-dependencies]
@@ -33,19 +37,23 @@ dev = [
 Homepage = "https://github.com/fema-ffrd/gpras"
 
 [tool.black]
-line-length = 88
+line-length = 120
 target-version = ['py312']
 
 [tool.ruff]
-line-length = 88
+line-length = 120
 target-version = "py312"
 lint.select = ["E", "F", "I", "N", "D", "UP", "B", "C4", "SIM"]
-lint.ignore = ["E501", "D203", "D212"]  # ignore long lines if needed
-exclude = ["build", "dist", ".venv"]
+lint.ignore = ["E501", "D203", "D213"]  # ignore long lines if needed
+lint.pydocstyle.convention = "google"
+exclude = ["build", "dist", ".venv", "experiments"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = "experiments"
 
 [tool.setuptools.dynamic]
 version = {attr = "gpras.__version__"}

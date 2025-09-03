@@ -1,0 +1,14 @@
+{
+    "ras_model_stac":"/workspaces/gpras/production/configurations/0.1.0/bridgeport.stac.json",
+    "events_stac_path": "production/configurations/0.1.0/events.stac.json",
+    "output_path": "production/configurations/0.1.0/event_plans.json",
+    "hdf_data_path":"/Event Conditions/Meteorology/Precipitation/Values",
+    "precip_dss_template_path":"/workspaces/gpras/production/configurations/0.1.0/exported-precip_trinity.dss",
+    "template_flow_path":"/workspaces/gpras/production/configurations/0.1.0/bridgeport.u01",
+    "dss_dir":"gpr_dss_files",
+    "geom_file_suffix":"g03",
+    "computation_interval":"1MIN",
+    "output_interval":"1HOUR",
+    "instantaneous_interval":"1HOUR",
+    "mapping_interval":"1HOUR"
+}
