@@ -312,7 +312,7 @@ class GPRAS:
             pickle.dump(d, f)
 
     @classmethod
-    def from_file(cls, json_path: str) -> Self:
+    def from_file(cls, json_path: str | Path) -> Self:
         """Load a Gaussian Process Regression model from a JSON representation.
 
         Args:
