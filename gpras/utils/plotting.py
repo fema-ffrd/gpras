@@ -306,13 +306,15 @@ def map_mesh_errors(
             )
         error_df = pd.read_sql_query(query, conn, params=cell_ids)
 
-    merged_df = mesh_df.merge(error_df, on="cell_id", how="left")
-    merged_df["error_value"] = merged_df[error_field].fillna(0)
+    error_df["error_value"] = error_df[error_field].fillna(0)
 
     # map for each event
-    colormap_limits = (merged_df["error_value"].min(), merged_df["error_value"].max())
-    events = merged_df["event"].unique()
+    Path(output_plot_path).mkdir(exist_ok=True, parents=True)
+    colormap_limits = (error_df["error_value"].min(), error_df["error_value"].max())
+    events = error_df["event"].unique()
     for event in events:
+        sub = error_df[error_df["event"] == event]
+        merged_df = mesh_df.merge(sub, on="cell_id", how="left").to_crs("epsg:4326")
         map_errors(
             merged_df[merged_df["event"] == event],
             Path(output_plot_path) / f"{suffix}_{event}.png",
@@ -337,49 +339,24 @@ def map_errors(
     Assumes geometry column contains polygon coordinates or shapely geometries
     """
     fig, ax = plt.subplots(figsize=(12, 8))
-
-    patches = []
-    colors = []
-
-    for _, row in merged_df.iterrows():
-        geom = row["geometry"]
-        if geom is None:
-            continue
-        # Handle Polygon and MultiPolygon
-        if geom.geom_type == "Polygon":
-            polys = [geom]
-        elif geom.geom_type == "MultiPolygon":
-            polys = list(geom.geoms)
-        else:
-            continue  # skip non-polygonal geometries
-        for poly in polys:
-            exterior = np.asarray(poly.exterior.coords)
-            patches.append(MplPolygon(exterior, closed=True))
-            colors.append(row["error_value"])
-
-    # Create patch collection
-    if not patches:
-        raise ValueError("No polygon patches could be constructed from 'merged_df'.")
-    p = PatchCollection(patches, alpha=0.8)
-    p.set_array(np.array(colors, dtype=float))
-    p.set_clim(*colormap_limits)  # Set color limits
-
-    # Add patches to plot
-    ax.add_collection(p)
-
-    # Set colorbar
-    cbar = plt.colorbar(p, ax=ax)
-    cbar.set_label(error_metric, rotation=270, labelpad=15, fontweight="bold")
+    merged_df.plot(
+        column="error_value",
+        ax=ax,
+        vmin=colormap_limits[0],
+        vmax=colormap_limits[1],
+        edgecolor="none",
+        legend=True,
+        legend_kwds={"label": error_metric},
+    )
 
     # Set equal aspect ratio and adjust limits
     ax.set_aspect("equal")
     ax.autoscale_view()
 
     plt.title(f"{error_metric} Map - {event}", fontsize=16, fontweight="bold")
-    plt.xlabel("X coordinate")
-    plt.ylabel("Y coordinate")
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
     plt.tight_layout()
-    # plt.show()
     plt.savefig(Path(output_plot_path))
     plt.close(fig)
 
@@ -466,6 +443,7 @@ def plot_timeseries_metrics(
         fig.suptitle(f"Timeseries Error Metrics - {event}")
         ax.set_ylim(y_limits)
         apply_formatting(fig, axs)
+        Path(out_path).mkdir(exist_ok=True, parents=True)
         fig.savefig(Path(out_path) / f"error_ts_{event}.png")
         plt.close(fig)
 
