@@ -19,7 +19,7 @@ class CVConfig(Config):
     @cached_property
     def test_plans(self) -> list[str]:
         """A List of HEC-RAS plans that should be used for testing."""
-        return [i["plan_title"] for i in self.event_plan_json if i["type"] == "Test" and i["set"] == "diverse"]
+        return [i["plan_title"] for i in self.event_plan_json if i["type"] == "Train" and i["set"] == "Diverse"]
 
 
 def setup(config_path: str) -> None:
@@ -42,7 +42,7 @@ def run_cv(config: CVConfig, parameter: str, options: list[Any]) -> None:
         out_dir.mkdir(parents=True)
         plot_dir = out_dir / "plots"
         plot_dir.mkdir()
-        config.metric_dir = out_dir
+        config.metric_db_path = out_dir / "performance_metrics.db"
         config.plot_dir = plot_dir
         setattr(config, parameter, i)
         pipeline(config)
@@ -59,7 +59,7 @@ def run_kernels(config_path: str) -> None:
 def run_spatial_modes(config_path: str) -> None:
     """Benchmark spatial mode count sensitivity."""
     config = CVConfig.from_file(config_path)
-    options = [3, 5, 7, 10, 12, 15, 20, 30, 50, 100, 300]
+    options = [3, 5, 7, 10, 12, 15, 20, 30, 50]
     parameter = "spatial_mode_count"
     run_cv(config, parameter, options)
 
