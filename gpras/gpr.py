@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import pickle
 from pathlib import Path
 from typing import Any, Literal, Self, TypeVar, cast
 
@@ -181,6 +181,9 @@ class GPRAS:
 
         self.models: list[SGPR] = []
 
+        self.x: NDArray[Any] | None = None
+        self.y: NDArray[Any] | None = None
+
     def fit(
         self,
         x: NDArray[Any],
@@ -209,11 +212,11 @@ class GPRAS:
             None
         """
         # Cast data to float64
-        x = x.astype(np.float64)
-        y = y.astype(np.float64)
+        self.x = x.astype(np.float64)
+        self.y = y.astype(np.float64)
 
         # Create base models
-        self._init_models(x, y, n_inducing, inducing_initializer)
+        self._init_models(self.x, self.y, n_inducing, inducing_initializer)
 
         # Optimize hyperparameters
         opt = OPTIMIZERS[optimization_method]
@@ -277,8 +280,7 @@ class GPRAS:
         means = []
         variances = []
         for i in self.models:
-            # x_i = np.c_[x[:, i]]
-            pred = i.predict_y(x)
+            pred = i.predict_y(x) if hasattr(i, "predict_y") else i.compiled_predict_y(x)
             means.append(pred[0])
             variances.append(pred[1])
         full_means = np.concatenate(means, axis=1)
@@ -300,18 +302,14 @@ class GPRAS:
         Returns:
             None
         """
-        if model_dir is None:
-            model_dir = str(Path(json_path).parent / "gpr_model")
-        dirs = []
-        for ind, i in enumerate(self.models):
-            tmp_dir = Path(model_dir) / f"model_{ind}"
-            tmp_dir.mkdir(exist_ok=True, parents=True)
-            tf.saved_model.save(i, tmp_dir)
-            dirs.append(str(tmp_dir))
-
-        json_rep = {"kernel": self.kernel_str, "models": dirs}
-        with open(json_path, mode="w") as f:
-            json.dump(json_rep, f, indent=4)
+        d = {
+            "kernel": self.kernel_str,
+            "data": {"x": self.x, "y": self.y},
+            "n_inducing": self.models[0].inducing_variable.Z.shape[0],
+            "models": [gpflow.utilities.parameter_dict(i) for i in self.models],
+        }
+        with open(json_path, mode="wb") as f:
+            pickle.dump(d, f)
 
     @classmethod
     def from_file(cls, json_path: str) -> Self:
@@ -323,8 +321,10 @@ class GPRAS:
         Returns:
             GPRAS: An instance of the GPRAS class with the loaded models and kernel.
         """
-        with open(json_path) as f:
-            json_rep = json.load(f)
-        inst = cls(json_rep["kernel"])
-        inst.models = [tf.saved_model.load(i) for i in json_rep["models"]]
+        with open(json_path, mode="rb") as f:
+            d = pickle.load(f)
+        inst = cls(d["kernel"])
+        inst._init_models(d["data"]["x"], d["data"]["y"], d["n_inducing"], "grid")
+        for ind, i in enumerate(d["models"]):
+            gpflow.utilities.multiple_assign(inst.models[ind], i)
         return inst
