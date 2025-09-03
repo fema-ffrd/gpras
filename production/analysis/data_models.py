@@ -70,7 +70,7 @@ class Config:
         self.metric_dir = self.working_directory_path / "metrics"
         self.testing_data_db = str(Path(self.working_directory) / "data" / "testing.db")
         self.training_data_db = str(Path(self.working_directory) / "data" / "training.db")
-        self.model_path = self.model_dir / "gpr.json"
+        self.model_path = self.model_dir / "gpr.pkl"
         self.preprocessor_path = self.model_dir / "preprocessor.pkl"
         self.timer_path = self.model_dir / "timers.json"
         self.metric_db_path = self.metric_dir / "performance_metrics.db"
