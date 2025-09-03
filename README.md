@@ -31,8 +31,14 @@ To use this software, please use either the [devcontainer](./.devcontainer/devco
 
 ```bash
 git clone https://github.com/fema-ffrd/gpras.git
+pip install .
 ```
 
+[!IMPORTANT]
+If not using the devcontainer, you will need to install hecdss manually.  This package is not available on PyPI.
+
+To install [hecdss](https://github.com/HydrologicEngineeringCenter/hec-dss-python), run the following commands.
 ```bash
-pip install .
+pip install -i https://test.pypi.org/simple/ hecdss
+python -c "from hecdss import download_hecdss"
 ```

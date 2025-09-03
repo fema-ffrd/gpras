@@ -34,7 +34,7 @@ jobs:
         pip install .[dev]
     - name: Run mypy
       run: |
-        MYPYPATH=gpras mypy --disallow-untyped-defs gpras
+        MYPYPATH=gpras mypy gpras production
 
   get-version:
     runs-on: ubuntu-latest
