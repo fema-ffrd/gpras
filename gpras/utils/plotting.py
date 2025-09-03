@@ -647,8 +647,8 @@ def map_detection_categories(
         filtered_true = df_true[mask]
         filtered_pred = df_pred[mask]
 
-        true_cell_vals = filtered_true.max(axis=0) if y_true.ndim == 2 else y_true
-        pred_cell_vals = filtered_pred.max(axis=0) if y_pred.ndim == 2 else y_pred
+        true_cell_vals: pd.DataFrame = filtered_true.max(axis=0) if y_true.ndim == 2 else y_true
+        pred_cell_vals: pd.DataFrame = filtered_pred.max(axis=0) if y_pred.ndim == 2 else y_pred
 
         true_cell_vals = true_cell_vals.sort_index()
         pred_cell_vals = pred_cell_vals.sort_index()
