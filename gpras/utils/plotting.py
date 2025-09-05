@@ -98,7 +98,16 @@ def ec_pairplot(
     g.savefig(Path(out_path))
 
 
-def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, out_dir: str | Path) -> None:
+def ec_timeseries(
+    x: NDArray[Any],
+    y: NDArray[Any],
+    modes_to_plot: int,
+    ind: pd.Index,
+    out_dir: str | Path,
+    low_est: NDArray[Any] | None = None,
+    est: NDArray[Any] | None = None,
+    high_est: NDArray[Any] | None = None,
+) -> None:
     """Plot EOF time series for low- and high-fidelity models by event plan.
 
     Args:
@@ -107,6 +116,9 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.
         modes_to_plot (int): Number of EOF modes to plot.
         out_dir (str): Dirctory to save the plots.
         ind (pd.Index): Index object (e.g., MultiIndex) used to group samples by plan.
+        low_est (NDArray[Any], optional): Low-fidelity EOF coefficients upper CI.
+        est (NDArray[Any], optional): Low-fidelity EOF coefficients mean estimate.
+        high_est (NDArray[Any], optional): Low-fidelity EOF coefficients upper CI.
 
     Returns:
         None
@@ -118,6 +130,16 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.
         for i, ax in enumerate(axs):
             ax.plot(y[cum_index : cum_index + count, i], label="HF model", c=COMMON_COLORS[0])
             ax.plot(x[cum_index : cum_index + count, i], label="LF model", c=COMMON_COLORS[1])
+            if low_est is not None and est is not None and high_est is not None:
+                ax.plot(est[cum_index : cum_index + count, i], label="GPR", c="k")
+                ax.fill_between(
+                    np.arange(count),
+                    low_est[cum_index : cum_index + count, i],
+                    high_est[cum_index : cum_index + count, i],
+                    label="CI",
+                    fc="k",
+                    alpha=0.1,
+                )
             ax.set_ylabel(f"EOF_{i}")
             ax.set_yticks([], labels=[])
         cum_index += count
