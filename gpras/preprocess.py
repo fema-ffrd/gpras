@@ -685,30 +685,49 @@ class PreProcessor:
         d[d < 0] = 0
         return d
 
-    def reverse_transform(self, x: NDArray[Any]) -> NDArray[Any]:
+    def reverse_transform(
+        self, mean: NDArray[Any], var: NDArray[Any] | None
+    ) -> NDArray[Any] | tuple[NDArray[Any], NDArray[Any]]:
         """Reverse the PCA transformation back to the original space.
 
         Reconstructs the full water surface elevation field, filling in
         always-dry cells with their original elevation values.
 
         Args:
-            x (NDArray[Any]): Array of shape (samples, spatial_mode_count) in EOF space.
+            mean (NDArray[Any]): Array of GPR mean estimates of shape (samples, spatial_mode_count) in EOF space.
+            var (NDArray[Any]): Array of GPR variance estimates of shape (samples, spatial_mode_count) in EOF space.
 
         Returns:
             NDArray[Any]: Array of shape (samples, cells) in original space.
         """
-        x = (x * self.x_std) + self.x_mean
-        x = np.dot(x, self.eofs)
+        mean = (mean * self.x_std) + self.x_mean
+        mean = np.dot(mean, self.eofs)
         if self.weights is not None:
-            x /= self.weights
-        x += self.input_mean
-        x_full = np.empty((x.shape[0], self.dry_indices.shape[0]))
+            mean /= self.weights
+        mean += self.input_mean
+        x_full = np.empty((mean.shape[0], self.dry_indices.shape[0]))
         if self.hydraulic_parameter == "depth":
             x_full[:, self.dry_indices] = 0
         else:
             x_full[:, self.dry_indices] = self.elevations[self.dry_indices]
-        x_full[:, ~self.dry_indices] = x
-        return x_full
+        x_full[:, ~self.dry_indices] = mean
+        if var is None:
+            return x_full
+        else:
+            var_prop = var.dot(self._linear_transform_for_var)
+            var_prop_full = np.empty((var_prop.shape[0], self.dry_indices.shape[0]))
+            var_prop_full[:, self.dry_indices] = 0
+            var_prop_full[:, ~self.dry_indices] = var_prop
+            return x_full, var_prop_full
+
+    @cached_property
+    def _linear_transform_for_var(self) -> NDArray[Any]:
+        """Squared linear transform for error propogation in reverse transform."""
+        a = np.diag(self.x_std)
+        a = a.dot(self.eofs)
+        if self.weights is not None:
+            a /= self.weights.reshape(1, -1)
+        return a**2
 
     def classify_wetness_wse(self, x: NDArray[Any], elevations: NDArray[Any]) -> NDArray[np.str_]:
         """Classify each cell as always dry (AD), always flooded (AF), or transitionally flooded (TF).
