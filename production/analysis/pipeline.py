@@ -236,6 +236,16 @@ def pipeline(config: Config) -> None:
         pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         config.metric_db_path,
     )
+    pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+        "production/post_processing/data/df_lf_test_data_depth.csv"
+    )  # added by DCW
+    pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+        "production/post_processing/data/df_hf_test_data_depth.csv"
+    )  # added by DCW
+    pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+        "production/post_processing/data/y_test_pred_depth.csv"
+    )  # added by DCW
+
     with open(config.timer_path, mode="w") as f:
         json.dump(
             {"load_data": t2 - t1, "preprocess_data": t3 - t2, "fit_model": t4 - t3, "make_predictions": t5 - t4},
