@@ -2,6 +2,8 @@
 
 import os
 import pickle
+import re
+from datetime import datetime
 from functools import cached_property
 from os import PathLike
 from pathlib import Path
@@ -10,10 +12,14 @@ from typing import Any, Literal, Self, cast
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyproj
 import rasterio
+import shapely
+from hecdss import HecDss
 from numpy.typing import NDArray
 from pyproj import CRS
 from rasterio.features import rasterize
+from rasterio.transform import from_origin
 from shapely import Polygon
 from sklearn.decomposition import PCA, IncrementalPCA
 
@@ -21,6 +27,7 @@ from gpras.ras.model import RasModel
 from gpras.utils.plotting import ts_clipping
 from gpras.utils.spatial_utils import ras_hdf_precip_transform
 
+HecDss.set_global_debug_level(0)
 HydraulicParameterType = Literal["wse", "depth", "velocity"]
 
 DB_PATHS = {
@@ -398,13 +405,16 @@ class RasUpskillDataBuilder(DataBuilder):
         return df
 
 
-class BoundaryConditionDataBuilder(DataBuilder):
+class HmsUpskillDataBuilder(DataBuilder):
     """Used to build datasets for upskilling precip and inflow timeseries to high-fidelity HEC-RAS."""
 
     def __init__(
         self,
         hf_ras: RasModel,
-        bc_ids: list[str],
+        inflow_dss_dir: str,
+        inflow_hms_elements: list[str],
+        precip_dss_dir: str,
+        precip_spatial_mode_count: int,
         mesh_id: str,
         plans: list[str],
         area_of_interest: Polygon,
@@ -412,22 +422,168 @@ class BoundaryConditionDataBuilder(DataBuilder):
         flow_convergence_threshold: float = 0.95,
         cutoffs: dict[str, tuple[int, int]] | None = None,
         hf_resampler: NDArray[Any] | None = None,
-        precip_spatial_mode_count: int = 5,
     ):
         """Construct class."""
         super().__init__(
             hf_ras, mesh_id, plans, area_of_interest, cell_id_field, flow_convergence_threshold, cutoffs, hf_resampler
         )
+
+        self.inflow_dss_dir = inflow_dss_dir
+        self.inflow_hms_elements = inflow_hms_elements
+        self.precip_dss_dir = precip_dss_dir
         self.precip_spatial_mode_count = precip_spatial_mode_count
-        self.bc_ids = bc_ids
 
     def get_lf_plan_data(self, plan: str) -> pd.DataFrame:
         """Get boundary condition features for the HF model."""
         all_cols = []
-        for bc in self.bc_ids:
-            all_cols.append(self.get_bc_ts(plan, bc))  # TODO: Update to inflow (ref line) rather than baseflow
-        all_cols.append(self.get_precip_ts(plan))
+        for bc in self.inflow_hms_elements:
+            all_cols.append(self.get_hms_inflow_ts(plan, bc))
+        all_cols.append(self.get_hms_precip_ts(plan))
         return pd.concat(all_cols, axis=1).fillna(0)
+
+    def get_hms_inflow_ts(self, plan: str, bc_id: str) -> pd.DataFrame:
+        """Get the outflow from a HEC-HMS element."""
+        dss = HecDss(str(Path(self.inflow_dss_dir) / f"{plan}.dss"))
+        dss_path = [str(i) for i in dss.get_catalog() if bc_id[0] == i.B and bc_id[1] == i.C][0]
+        data = dss.get(dss_path)
+        return pd.DataFrame(data.values, index=data.times, columns=[f"{bc_id[0]}_{bc_id[1]}"])
+
+    def get_hms_precip_ts(self, plan: str) -> pd.DataFrame:
+        """Geet a HEC-HMS excess precip grid timeseries."""
+        # Load DSS
+        dss = HecDss(str(Path(self.precip_dss_dir) / f"{plan}.dss"))
+
+        # Process
+        ts = []
+        dt_index = []
+        for i in dss.get_catalog():
+            t = re.search(r"\d{2}[A-Za-z]{3}\d{4}:\d{4}", str(i))
+            if not t:
+                raise ValueError(f"Could not parse datetime from DSS catalog entry: {i}")
+            dt_index.append(datetime.strptime(t.group(), "%d%b%Y:%H%M"))
+            record = dss.get(str(i))
+            data = np.flipud(record.data)
+            ts.append(data[self._aoi_precip_mask])
+        vals = np.array(ts)
+        return pd.DataFrame(vals, index=dt_index, columns=[f"precip_{i}" for i in range(vals.shape[1])])
+
+    # def compare_p(self, plan) -> None:  # type: ignore
+    #     """For debugging, add to git then deprecate."""
+    #     asset = self.hf_ras.plan_hdfs[plan]
+    #     ras = asset.get("/Event Conditions/Meteorology/Precipitation/Values")[:]
+    #     ras_mask = self._rasterized_aoi
+    #     shape = (ras.shape[0], ras_mask.shape[0], ras_mask.shape[1])
+    #     ras = np.reshape(ras, shape)
+
+    #     dss = HecDss(str(Path(self.precip_dss_dir) / f"{plan}.dss"))
+    #     ts = []
+    #     dt_index = []
+    #     for i in dss.get_catalog():
+    #         t = re.search(r"\d{2}[A-Za-z]{3}\d{4}:\d{4}", str(i))
+    #         if not t:
+    #             raise ValueError(f"Could not parse datetime from DSS catalog entry: {i}")
+    #         dt_index.append(datetime.strptime(t.group(), "%d%b%Y:%H%M"))
+    #         record = dss.get(str(i))
+    #         ts.append(record.data)
+    #     dt_index, ts = zip(*sorted(zip(dt_index, ts, strict=False)), strict=False)
+    #     hms_mask = self._aoi_precip_mask
+    #     hms = np.array(ts)
+    #     hms_flip = np.array([np.flipud(i) for i in ts])
+
+    #     hms_mean = hms_flip[:, hms_mask].mean(axis=1)
+    #     ras_mean = ras[:, ras_mask].mean(axis=1)
+
+    #     hms_mean = hms_flip[:, hms_mask].mean(axis=1)
+    #     ras_mean = ras[:, ras_mask].mean(axis=1)
+
+    #     import imageio
+    #     import matplotlib.pyplot as plt
+
+    #     fig, ax = plt.subplots()
+    #     ax.plot(hms_mean, label="hms")
+    #     ax.plot(ras_mean, label="ras")
+    #     ax.legend()
+    #     fig.tight_layout()
+    #     fig.savefig("precip_ts.png")
+    #     plt.close(fig)
+
+    #     fig, axs = plt.subplots(ncols=2, nrows=2, figsize=(8, 8))
+    #     t = 2
+    #     ras_img = ras.copy()
+    #     ras_img[ras_img == 0] = np.nan
+    #     hms_img = hms.copy()
+    #     hms_img[hms_img == 0] = np.nan
+    #     axs[0, 0].imshow(ras_img.reshape(hms.shape[0], hms.shape[1], hms.shape[2], order="C")[t])
+    #     axs[0, 1].imshow(np.flipud(hms_img[t]))
+    #     axs[1, 0].imshow(ras_mask.reshape(hms.shape[1], hms.shape[2], order="C"))
+    #     axs[1, 1].imshow(hms_mask)
+    #     fig.tight_layout()
+    #     fig.savefig("check_precip.png")
+    #     plt.close(fig)
+
+    #     frames = []
+    #     for t in range(hms.shape[0]):  # iterate over time axis
+    #         fig, axs = plt.subplots(ncols=2, nrows=2, figsize=(8, 8))
+
+    #         ras_img = ras.copy()
+    #         ras_img[ras_img == 0] = np.nan
+    #         hms_img = hms.copy()
+    #         hms_img[hms_img == 0] = np.nan
+
+    #         axs[0, 0].imshow(ras_img.reshape(hms.shape[0], hms.shape[1], hms.shape[2], order="C")[t])
+    #         axs[0, 1].imshow(np.flipud(hms_img[t]))
+    #         axs[1, 0].imshow(ras_mask.reshape(hms.shape[1], hms.shape[2], order="C"))
+    #         axs[1, 1].imshow(hms_mask)
+
+    #         fig.tight_layout()
+
+    #         # save this frame to a buffer
+    #         fig.canvas.draw()
+    #         image = np.frombuffer(fig.canvas.tostring_rgb(), dtype="uint8")
+    #         image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    #         frames.append(image)
+
+    #         plt.close(fig)
+
+    #     # save all frames as a gif
+    #     imageio.mimsave("check_precip.gif", frames, fps=3)  # adjust fps as needed
+
+    @cached_property
+    def _aoi_precip_mask(self) -> NDArray[Any]:
+        """Precipitation array mask for area of interest (applies to HMS dss file data)."""
+        # Load DSS
+        plan = self.plans[0]
+        dss = HecDss(str(Path(self.precip_dss_dir) / f"{plan}.dss"))
+
+        # Get AOI mask
+        catalog = dss.get_catalog()
+        record_template = dss.get(next(iter(catalog)))
+
+        # Make transform
+        pixel_size = record_template.cellSize
+        height = record_template.numberOfCellsY
+
+        upper_left_x = (record_template.lowerLeftCellX) * pixel_size
+        upper_left_y = (record_template.lowerLeftCellY + height) * pixel_size
+        transform = from_origin(upper_left_x, upper_left_y, pixel_size, pixel_size)
+
+        # Get mask
+        src = pyproj.CRS(self.hf_geometry_aoi.crs)
+        dest = pyproj.CRS(record_template.srsDefinition)
+        project = pyproj.Transformer.from_crs(src, dest, always_xy=True).transform
+        shape = shapely.ops.transform(project, self.area_of_interest)
+        shapes = [(shape, 1)]
+
+        mask = rasterize(
+            shapes,
+            out_shape=(record_template.numberOfCellsY, record_template.numberOfCellsX),
+            transform=transform,
+            fill=0,  # outside polygon
+            all_touched=True,
+            dtype="uint8",
+        ).astype(bool)
+
+        return mask
 
 
 class PseudoSurfaceDataBuilder(DataBuilder):
@@ -686,7 +842,7 @@ class PreProcessor:
         return d
 
     def reverse_transform(
-        self, mean: NDArray[Any], var: NDArray[Any] | None
+        self, mean: NDArray[Any], var: NDArray[Any] | None = None
     ) -> NDArray[Any] | tuple[NDArray[Any], NDArray[Any]]:
         """Reverse the PCA transformation back to the original space.
 
@@ -798,17 +954,20 @@ class PreProcessor:
         return cls(**d)
 
 
-class BoundaryConditionPreProcessor:
+class HmsPreProcessor:
     """Preprocessor for feature engineering from precip and inflow boundary conditions."""
 
     def __init__(
         self,
         precip_spatial_mode_count: int = 0,
+        bc_mask: NDArray[Any] | None = None,
+        precip_mask: NDArray[Any] | None = None,
         eofs: NDArray[Any] | None = None,
         eigenvalues: NDArray[Any] | None = None,
         n_samples_fit: float = 0,
         x_mean: NDArray[Any] | None = None,
         x_std: NDArray[Any] | None = None,
+        input_mean: NDArray[Any] | None = None,
     ):
         """Preprocessor class constructor.
 
@@ -816,38 +975,54 @@ class BoundaryConditionPreProcessor:
 
         Args:
             precip_spatial_mode_count (int): Number of spatial modes for PCA. Defaults to 0.
+            bc_mask (NDArray[Any] | None, optional): Boolean mask for boundary condition columns. Defaults to None.
+            precip_mask (NDArray[Any] | None, optional): Boolean mask for precipitation columns. Defaults to None.
             eofs (NDArray[Any] | None, optional): Empirical Orthogonal Functions (EOFs) from PCA. Defaults to None.
             eigenvalues (NDArray[Any] | None, optional): Eigenvalues from PCA. Defaults to None.
             n_samples_fit (float, optional): Number of samples used during PCA fitting. Defaults to 0.
             x_mean (NDArray[Any] | None, optional): Mean of spatial modes. Defaults to None.
             x_std (NDArray[Any] | None, optional): Standard deviation of spatial modes. Defaults to None.
+            input_mean (NDArray[Any] | None, optional): Input data means. Defaults to None.
 
         Returns:
             None
         """
         self.precip_spatial_mode_count: int = precip_spatial_mode_count
-        self.eofs: NDArray[Any] = eofs or np.empty(0, dtype=float)
-        self.eigenvalues: NDArray[Any] = eigenvalues or np.empty(0, dtype=float)
+        self.bc_mask = bc_mask if bc_mask is not None else np.empty(0, dtype=float)
+        self.precip_mask = precip_mask if precip_mask is not None else np.empty(0, dtype=float)
+        self.eofs: NDArray[Any] = eofs if eofs is not None else np.empty(0, dtype=float)
+        self.eigenvalues: NDArray[Any] = eigenvalues if eigenvalues is not None else np.empty(0, dtype=float)
         self.n_samples_fit = n_samples_fit
-        self.x_mean: NDArray[Any] = x_mean or np.empty(0, dtype=float)
-        self.x_std: NDArray[Any] = x_std or np.empty(0, dtype=float)
+        self.x_mean: NDArray[Any] = x_mean if x_mean is not None else np.empty(0, dtype=float)
+        self.x_std: NDArray[Any] = x_std if x_std is not None else np.empty(0, dtype=float)
+        self.input_mean: NDArray[Any] = input_mean if input_mean is not None else np.empty(0, dtype=float)
 
     def fit(
         self,
-        x_bc: NDArray[Any],
-        x_precip: NDArray[Any],
+        x: NDArray[Any],
+        bc_mask: NDArray[Any],
+        precip_mask: NDArray[Any],
         precip_spatial_mode_count: int | None = None,
     ) -> None:
         """Fit the preprocessor to the input data using PCA.
 
         Args:
-            x_bc (NDArray[Any]): Array of shape (samples, boundary conditions) representing discharge into the model.
-            x_precip (NDArray[Any]): Array of shape (samples, raster cells) representing precip. into the model.
+            x (NDArray[Any]): Array of shape (samples, features) representing discharge+precip. into the model.
+            bc_mask (NDArray[Any] | None, optional): Boolean mask for boundary condition columns. Defaults to None.
+            precip_mask (NDArray[Any] | None, optional): Boolean mask for precipitation columns. Defaults to None.
             precip_spatial_mode_count (int): Optional number of spatial modes to use for precipitation PCA.
 
         Returns:
             None
         """
+        self.input_mean = x.mean(axis=0)
+        x = x - self.input_mean
+
+        self.bc_mask = bc_mask
+        self.precip_mask = precip_mask
+        x_bc = x[:, self.bc_mask]
+        x_precip = x[:, self.precip_mask]
+
         # Fit PCA
         pca = IncrementalPCA()  # Documentation says that the function can batch itself
         pca.fit(x_precip)
@@ -871,14 +1046,19 @@ class BoundaryConditionPreProcessor:
         precip_reduced = np.dot(x_precip, self.eofs.T)
 
         # Combine all features
-        x = np.concatenate([x_bc, precip_reduced, api_1, api_2], axis=1)
+        x = np.concatenate([x_bc, precip_reduced, avg_precip[:, None], api_1, api_2], axis=1)
 
         # Set second round of standardization
         self.x_mean = x.mean(axis=0)
-        self.x_std = x.std(axis=0)
+        self.x_std = np.array([np.std(x[x[:, i] != 0, i]) for i in range(x.shape[1])])
 
-    def transform(self, x_bc: NDArray[Any], x_precip: NDArray[Any]) -> NDArray[Any]:
+    def transform(self, x: NDArray[Any]) -> NDArray[Any]:
         """Transform boundary condition data to reduced data space and derive features."""
+        # Split feature types.
+        x = x - self.input_mean
+        x_bc = x[:, self.bc_mask]
+        x_precip = x[:, self.precip_mask]
+
         # Derive precip features
         avg_precip = np.mean(x_precip, axis=1)
         api_1 = self.calc_antecedent_precipitation_index(avg_precip)
@@ -886,20 +1066,50 @@ class BoundaryConditionPreProcessor:
         precip_reduced = np.dot(x_precip, self.eofs.T)
 
         # Combine all features
-        x = np.concatenate([x_bc, precip_reduced, api_1, api_2], axis=1)
+        x = np.concatenate([x_bc, precip_reduced, avg_precip[:, None], api_1, api_2], axis=1)
 
         # Standardize
         x = (x - self.x_mean) / self.x_std
 
         return cast(NDArray[Any], x)
 
-    def calc_antecedent_precipitation_index(self, x: NDArray[Any], k: float = 0.85, window: int = 24) -> NDArray[Any]:
+    def calc_antecedent_precipitation_index(
+        self, x: NDArray[Any], k: float = 0.85, window: int | None = None
+    ) -> NDArray[Any]:
         """Get precipitation index for a timeseries.
 
         https://glossary.ametsoc.org/wiki/Antecedent_precipitation_index. Exponential decay kernel.
         """
+        if window is None:
+            window = len(x)
         weights = np.array([k**i for i in range(window)])
         return np.convolve(x, weights, mode="full")[: len(x), np.newaxis]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Dictionary representation of class for serialization."""
+        return {
+            "precip_spatial_mode_count": self.precip_spatial_mode_count,
+            "bc_mask": self.bc_mask,
+            "precip_mask": self.precip_mask,
+            "eofs": self.eofs,
+            "eigenvalues": self.eigenvalues,
+            "n_samples_fit": self.n_samples_fit,
+            "x_mean": self.x_mean,
+            "x_std": self.x_std,
+            "input_mean": self.input_mean,
+        }
+
+    def to_file(self, out_path: str | PathLike[str]) -> None:
+        """Save dict representation of self to file."""
+        with open(out_path, mode="wb") as f:
+            pickle.dump(self.to_dict(), f)
+
+    @classmethod
+    def from_file(cls, in_path: str | PathLike[str]) -> Self:
+        """Deserialize instance of self from a file representation."""
+        with open(in_path, mode="rb") as f:
+            d = pickle.load(f)
+        return cls(**d)
 
 
 def compute_norths_rule(pca: PCA | IncrementalPCA) -> int:
