@@ -15,6 +15,7 @@ path_hf_results = r"/workspaces/gpras/production/post_processing/data/df_hf_test
 path_lf_results = r"/workspaces/gpras/production/post_processing/data/df_lf_test_data_depth.csv"
 path_y_test_results = r"/workspaces/gpras/production/post_processing/data/y_test_pred_depth.csv"
 path_mesh_gpkg = r"/workspaces/gpras/qc.gpkg"
+path_fluvial_bounds = r"/workspaces/gpras/production/post_processing/GIS/masks/fluvial_mask_gpr40_t55_0ft.shp"
 
 # oututs
 path_hf_mesh_gpr40_results_shp = r"/workspaces/gpras/production/post_processing/data/gdf_hf_mesh_gpr40_results.shp"
@@ -25,12 +26,17 @@ path_test_mesh_gpr40_results_gif = (
     r"/workspaces/gpras/production/post_processing/data/gdf_te_mesh_gpr40_results_ani.gif"
 )
 
+path_test_mesh_gpr40_results_gif_fluv = (
+    r"/workspaces/gpras/production/post_processing/data/gdf_te_mesh_gpr40_results_fluv_ani.gif"
+)
+
 # %% load data
 df_hf_results = pd.read_csv(path_hf_results)
 df_lf_results = pd.read_csv(path_lf_results)
 df_test_results = pd.read_csv(path_y_test_results)
 gdf_lf_mesh = gpd.read_file(path_mesh_gpkg, driver="GPKG", layer="LF_cells")
 gdf_hf_mesh = gpd.read_file(path_mesh_gpkg, driver="GPKG", layer="HF_cells")
+gdf_fluvial_bounds = gpd.read_file(path_fluvial_bounds)
 
 # %% redefine mesh cell id as strings
 gdf_hf_mesh["cell_id"] = gdf_hf_mesh["cell_id"].astype(str)
@@ -140,6 +146,9 @@ ax3.set_ylim(ylim)
 boundary1 = gdf_hf_mesh.boundary.plot(ax=ax1, edgecolor="black", linewidth=0.1)
 boundary2 = gdf_hf_mesh.boundary.plot(ax=ax2, edgecolor="black", linewidth=0.1)
 boundary3 = gdf_hf_mesh.boundary.plot(ax=ax3, edgecolor="black", linewidth=0.1)
+boundary_fluvial1 = gdf_fluvial_bounds.boundary.plot(ax=ax1, edgecolor="black", linewidth=0.5)
+boundary_fluvial2 = gdf_fluvial_bounds.boundary.plot(ax=ax2, edgecolor="black", linewidth=0.5)
+boundary_fluvial3 = gdf_fluvial_bounds.boundary.plot(ax=ax3, edgecolor="black", linewidth=0.5)
 
 # Initialize the colorbar variable with a fixed normalization
 # norm = plt.Normalize(vmin=0, vmax=20)
@@ -168,6 +177,9 @@ def animate(timestep: int) -> None:
     boundary1 = gdf_hf_mesh.boundary.plot(ax=ax1, edgecolor="black", linewidth=0.1)
     boundary2 = gdf_hf_mesh.boundary.plot(ax=ax2, edgecolor="black", linewidth=0.1)
     boundary3 = gdf_hf_mesh.boundary.plot(ax=ax3, edgecolor="black", linewidth=0.1)
+    boundary_fluvial1 = gdf_fluvial_bounds.boundary.plot(ax=ax1, edgecolor="black", linewidth=0.5)
+    boundary_fluvial2 = gdf_fluvial_bounds.boundary.plot(ax=ax2, edgecolor="black", linewidth=0.5)
+    boundary_fluvial3 = gdf_fluvial_bounds.boundary.plot(ax=ax3, edgecolor="black", linewidth=0.5)
 
     # Plot the data for the current year
     gdf_hf_mesh.plot(ax=ax1, column="t" + str(timestep) + "_lf_40", legend=False, cmap="Blues", norm=norm)
@@ -185,6 +197,9 @@ def animate(timestep: int) -> None:
     boundary1 = boundary1
     boundary2 = boundary2
     boundary3 = boundary3
+    boundary_fluvial1 = boundary_fluvial1
+    boundary_fluvial2 = boundary_fluvial2
+    boundary_fluvial3 = boundary_fluvial3
 
 
 # Create the animation
@@ -196,7 +211,7 @@ animation = FuncAnimation(fig, animate, frames=list_timestep, repeat=False, inte
 # Save the animation as a GIF
 # writer = FFMpegWriter(fps=0.5, metadata=dict(artist='Me'), bitrate=1800)
 writer = PillowWriter(fps=1)
-animation.save(path_test_mesh_gpr40_results_gif, dpi=300, writer=writer)
+animation.save(path_test_mesh_gpr40_results_gif_fluv, dpi=300, writer=writer)
 
 plt.show()
 
