@@ -129,6 +129,10 @@ class DataBuilder:
 
     def get_cutoff(self, combo: NDArray[Any]) -> tuple[int, int]:
         """Determine when the model is 95% done changing and filter out warmup."""
+        # Trim to non-NAN values
+        if np.isnan(combo).any():
+            end_trim = np.min(np.argmax(np.isnan(combo), axis=0)[np.isnan(combo).any(axis=0)])
+            combo = combo[:end_trim, :]
         dx_dt = self._delta_cols_norm(combo)
         dx_dt = np.sum(dx_dt, axis=1) / np.sum(dx_dt)
         cum_dx_dt = np.cumsum(dx_dt)
@@ -141,7 +145,7 @@ class DataBuilder:
         """Normalized changes in feature or cell WSE across timesteps."""
         dx_dt = np.abs(np.diff(arr, axis=0))
         normalizer = np.sum(dx_dt, axis=0)
-        normalizer[normalizer == 0] = 1
+        normalizer[normalizer == 0] = 1  # Handles when WSE is constant across timesteps
         dx_dt /= normalizer
         return cast(NDArray[Any], dx_dt)
 
