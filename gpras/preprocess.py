@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import cached_property
 from os import PathLike
 from pathlib import Path
-from typing import Any, Literal, Self, cast
+from typing import Any, Literal, Self, cast, overload
 
 import geopandas as gpd
 import numpy as np
@@ -20,9 +20,11 @@ from numpy.typing import NDArray
 from pyproj import CRS
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
+from scipy.interpolate import LSQUnivariateSpline
 from shapely import Polygon
 from sklearn.decomposition import PCA, IncrementalPCA
 
+from gpras.gpr import GPRAS
 from gpras.ras.model import RasModel
 from gpras.utils.plotting import ts_clipping
 from gpras.utils.spatial_utils import ras_hdf_precip_transform
@@ -87,8 +89,8 @@ class DataBuilder:
         # Need to do this incrementally to save RAM.
         for p in self.plans:
             # Load
-            hf_data = self.get_hf_plan_data(p)
             lf_data = self.get_lf_plan_data(p)
+            hf_data = self.get_hf_plan_data(p)
             combo_df = pd.concat([hf_data, lf_data], axis=1)
 
             # Temporally subset
@@ -409,6 +411,242 @@ class RasUpskillDataBuilder(DataBuilder):
         return df
 
 
+class RatingCurve:
+    """Stage-discharge rating curve for boundary conditions."""
+
+    def __init__(
+        self,
+        q: NDArray[Any],
+        wse: NDArray[Any],
+        drop_nonpos: bool = True,
+        qmin: float = 0,
+        qmax: float = 10e10,
+        n_knots: int = 7,
+    ) -> None:
+        """Construct class."""
+        self._preprocess_data(q, wse, drop_nonpos, qmin, qmax)
+        if len(self.q) < max(8, n_knots + 5):
+            raise ValueError(f"Not enough points ({len(q)}) for knots={n_knots}. Reduce knots or add data.")
+        self.n_knots = n_knots
+        self._fit()
+
+    def _preprocess_data(
+        self, q: NDArray[Any], wse: NDArray[Any], drop_nonpos: bool = True, qmin: float = 0, qmax: float = 10e10
+    ) -> None:
+        """Organized set of data pre-processing steps."""
+        mask = np.isfinite(q) & np.isfinite(wse)
+        if drop_nonpos:
+            mask &= q > 0
+        if qmin is not None:
+            mask &= q >= float(qmin)
+        if qmax is not None:
+            mask &= q <= float(qmax)
+
+        q = q[mask]
+        wse = wse[mask]
+
+        order = np.argsort(q)
+        self.q = q[order]
+        self.wse = wse[order]
+
+    def _fit(self) -> None:
+        """Fit the spline rating curve."""
+        qs_ = np.linspace(0.0, 1.0, self.n_knots + 2)[1:-1]
+        interior_knots = np.quantile(self.q, qs_)
+        self.spline = LSQUnivariateSpline(self.q, self.wse, t=interior_knots.tolist(), k=3)
+
+    @property
+    def fit_stats(self) -> dict[str, Any]:
+        """Statistics on how good the spline fit is."""
+        wse_pred = self.spline(self.q)
+        resid = wse_pred - self.wse
+        return {"rmse": np.sqrt(np.mean(resid**2)), "mae": np.mean(resid)}
+
+    def predict(self, q: NDArray[Any]) -> NDArray[Any]:
+        """Predict WSE from discharge."""
+        return cast(NDArray[Any], self.spline(q))
+
+
+class PseudoSurfaceDataBuilder(DataBuilder):
+    """Used to upskill boundary condition data to high-fidelity HEC-RAS using a pseudosurface estimate."""
+
+    def __init__(
+        self,
+        hf_ras: RasModel,
+        inflow_dss_dir: str,
+        inflow_hms_elements: list[str],
+        precip_dss_dir: str,
+        precip_spatial_mode_count: int,
+        fluvial_lf_preprocessor_path: str,
+        fluvial_hf_preprocessor_path: str,
+        fluvial_gpr_path: str,
+        us_bc_id_ras: str,
+        ds_bc_id_ras: str,
+        us_bc_id_hms: str,
+        ds_bc_id_hms: str,
+        centerline_path: str,
+        mesh_id: str,
+        plans: list[str],
+        area_of_interest: Polygon,
+        cell_id_field: str = "cell_id",
+        flow_convergence_threshold: float = 0.95,
+        cutoffs: dict[str, tuple[int, int]] | None = None,
+        hf_resampler: NDArray[Any] | None = None,
+    ):
+        """Construct class."""
+        super().__init__(
+            hf_ras, mesh_id, plans, area_of_interest, cell_id_field, flow_convergence_threshold, cutoffs, hf_resampler
+        )
+
+        self.inflow_dss_dir = inflow_dss_dir
+        self.inflow_hms_elements = inflow_hms_elements
+        self.us_bc_id_ras = us_bc_id_ras
+        self.ds_bc_id_ras = ds_bc_id_ras
+        self.us_bc_id_hms = us_bc_id_hms
+        self.ds_bc_id_hms = ds_bc_id_hms
+        self.centerline_path = centerline_path
+        self.centerline = gpd.read_file(self.centerline_path).to_crs(self.hf_geometry_aoi.crs)
+        self.centerline_cells = self.hf_geometry_aoi.loc[
+            self.hf_geometry_aoi.intersects(self.centerline.iloc[0].geometry)
+        ]
+        self.centerline_cell_ids = self.centerline_cells["cell_id"].values
+        self._set_centerline_interpolater()
+        self._set_cell_interpolater()
+
+        # Fluvial model
+        self.fluvia_data_builder = HmsUpskillDataBuilder(
+            hf_ras,
+            inflow_dss_dir,
+            inflow_hms_elements,
+            precip_dss_dir,
+            precip_spatial_mode_count,
+            mesh_id,
+            plans,
+            area_of_interest,
+            cell_id_field,
+            flow_convergence_threshold,
+            cutoffs,
+            hf_resampler,
+        )
+        self.fluvial_lf_preprocessor: HmsPreProcessor = HmsPreProcessor.from_file(fluvial_lf_preprocessor_path)
+        self.fluvial_hf_preprocessor: PreProcessor = PreProcessor.from_file(fluvial_hf_preprocessor_path)
+        self.fluvial_gpr: GPRAS = GPRAS.from_file(fluvial_gpr_path)
+
+    def get_lf_plan_data(self, plan: str) -> pd.DataFrame:
+        """Get estimated fluvial surface for a plan."""
+        # Get inflow timeseries
+        us_ts = self.get_hms_inflow_ts(plan, self.us_bc_id_hms)
+        ds_ts = self.get_hms_inflow_ts(plan, self.ds_bc_id_hms)
+
+        # Use RC to convert to u/s and d/s BCs
+        us_ts_wse = self.us_rating_curve.predict(us_ts.values)
+        ds_ts_wse = self.ds_rating_curve.predict(ds_ts.values)
+
+        # Interpolate centerline
+        centerline_ts_wse = self.interpolate_centerline(us_ts_wse, ds_ts_wse)
+
+        # Interpolate all cells
+        full_df = self.interpolate_surface(centerline_ts_wse)
+        full_df = np.maximum(full_df, self.cell_elevations[None, :])
+        full_df = np.maximum(full_df, self.get_lf_fluvial_est(plan))
+
+        return pd.DataFrame(full_df, columns=self.hf_geometry_aoi["cell_id"], index=us_ts.index)
+
+    def get_lf_fluvial_est(self, plan: str) -> NDArray[Any]:
+        """Use the HMS upskill GPR to predict WSE at all cells."""
+        df = self.fluvia_data_builder.get_lf_plan_data(plan)
+        reduced = self.fluvial_lf_preprocessor.transform(df.values)
+        predicted, _ = self.fluvial_gpr.predict(reduced)
+        return self.fluvial_hf_preprocessor.reverse_transform(predicted)
+
+    def get_hms_inflow_ts(self, plan: str, bc_id: str) -> pd.DataFrame:
+        """Get the outflow from a HEC-HMS element."""
+        dss = HecDss(str(Path(self.inflow_dss_dir) / f"{plan}.dss"))
+        dss_path = [str(i) for i in dss.get_catalog() if bc_id == i.B and i.C == "FLOW"][0]
+        data = dss.get(dss_path)
+        return pd.DataFrame(data.values, index=data.times, columns=[f"{bc_id}_FLOW"])
+
+    @cached_property
+    def bc_ts(self) -> pd.DataFrame:
+        """Get boundary condition timeseries for all plans."""
+        return pd.concat([self.get_ref_line_df(i) for i in self.plans], axis=0)
+
+    @cached_property
+    def us_rating_curve(self) -> RatingCurve:
+        """Make a rating curve for the upstream boundary condition."""
+        q = self.bc_ts[self.us_bc_id_ras + "_flows"].values
+        wse = self.bc_ts[self.us_bc_id_ras + "_wse"].values
+        return RatingCurve(q, wse)
+
+    @cached_property
+    def ds_rating_curve(self) -> RatingCurve:
+        """Make a rating curve for the downstream boundary condition."""
+        q = self.bc_ts[self.ds_bc_id_ras + "_flows"].values
+        wse = self.bc_ts[self.ds_bc_id_ras + "_wse"].values
+        return RatingCurve(q, wse)
+
+    def interpolate_centerline(self, us_df: pd.DataFrame, ds_df: pd.DataFrame) -> pd.DataFrame:
+        """Interpolate from boundary condition WSEs along stream centerline."""
+        _range = us_df - ds_df
+        return us_df - np.outer(_range, self.cl_interpolater)
+
+    def interpolate_surface(self, cl_df: NDArray[Any]) -> NDArray[Any]:
+        """Interpolate all cells (thiessen polygon) using centerline WSE estimates."""
+        return cl_df[:, self.cell_interpolater]
+
+    def _set_centerline_interpolater(self) -> None:
+        """Set the interploter to get streamline cell WSE from boundary WSEs."""
+        us_wse_col = f"{self.us_bc_id_ras}_wse"
+        ds_wse_col = f"{self.ds_bc_id_ras}_wse"
+        us_q_col = f"{self.us_bc_id_ras}_flows"
+        ds_q_col = f"{self.ds_bc_id_ras}_flows"
+
+        # Get data
+        store = []
+        for p in self.plans:
+            bc_data = self.get_ref_line_df(p)[[us_wse_col, ds_wse_col, us_q_col, ds_q_col]]
+            cell_data = self.get_hf_plan_data(p)
+            cell_data = cell_data.iloc[:, cell_data.columns.isin(self.centerline_cell_ids)].copy()
+            combo = pd.concat([bc_data, cell_data], axis=1)
+            mask = (bc_data[[us_q_col, ds_q_col]] > 0).any(axis=1)
+            combo = combo[mask].copy()
+            store.append(combo)
+        all_data: pd.DataFrame = pd.concat(store, axis=0)
+
+        # Derive pct decrease
+        wses = all_data[self.centerline_cell_ids].values
+        us_wse = all_data[us_wse_col].values
+        ds_wse = all_data[ds_wse_col].values
+        range_ = np.subtract(us_wse, ds_wse)
+        self.cl_interpolater = np.median(((us_wse[:, None] - wses) / range_[:, None]), axis=0)
+
+    def _set_cell_interpolater(self) -> None:
+        """Set the thiessen polygon interpolater for all cells."""
+        nearest = gpd.sjoin_nearest(self.hf_geometry_aoi, self.centerline_cells, how="left", distance_col="dist")
+        nearest = nearest.drop_duplicates(subset="cell_id_left")
+        lookup = {cell: ind for ind, cell in enumerate(self.centerline_cell_ids)}
+        self.cell_interpolater = nearest["cell_id_right"].map(lookup).values
+
+    @cached_property
+    def cell_stations(self) -> NDArray[Any]:
+        """Get the station along the stream centerline of each centerline cell."""
+        cell_perimeter = self.hf_geometry_aoi.copy()
+        cell_perimeter["geometry"] = cell_perimeter.boundary
+        intersections = gpd.overlay(cell_perimeter, self.centerline, how="intersection", keep_geom_type=False)
+        intersection_points = intersections[intersections.geometry.type.isin(["Point", "MultiPoint"])].reset_index(
+            drop=True
+        )
+        intersection_points = intersection_points.explode(index_parts=False).reset_index(drop=True)
+        stations = []
+        line_geom = self.centerline.iloc[0].geometry
+        for _, row in intersection_points.iterrows():
+            station = line_geom.project(row.geometry)
+            stations.append(station)
+        intersection_points["distance"] = stations
+        cell_dists = intersection_points.groupby("cell_id", as_index=False)["distance"].mean()
+        return cast(NDArray[Any], cell_dists.set_index("cell_id").loc[self.centerline_cell_ids, "distance"].values)
+
+
 class HmsUpskillDataBuilder(DataBuilder):
     """Used to build datasets for upskilling precip and inflow timeseries to high-fidelity HEC-RAS."""
 
@@ -506,27 +744,7 @@ class HmsUpskillDataBuilder(DataBuilder):
             dtype="uint8",
         ).astype(bool)
 
-        return mask
-
-
-class PseudoSurfaceDataBuilder(DataBuilder):
-    """Used to build datasets for upskilling a predicted WSE surface to high-fidelity HEC-RAS."""
-
-    def __init__(
-        self,
-        hf_ras: RasModel,
-        mesh_id: str,
-        plans: list[str],
-        area_of_interest: Polygon,
-        cell_id_field: str = "cell_id",
-        flow_convergence_threshold: float = 0.95,
-        cutoffs: dict[str, tuple[int, int]] | None = None,
-        hf_resampler: NDArray[Any] | None = None,
-    ):
-        """Construct class."""
-        super().__init__(
-            hf_ras, mesh_id, plans, area_of_interest, cell_id_field, flow_convergence_threshold, cutoffs, hf_resampler
-        )
+        return cast(NDArray[Any], mask)
 
 
 class RasReader:
@@ -764,6 +982,11 @@ class PreProcessor:
         d[d < 0] = 0
         return d
 
+    @overload
+    def reverse_transform(self, mean: NDArray[Any]) -> NDArray[Any]: ...
+    @overload
+    def reverse_transform(self, mean: NDArray[Any], var: NDArray[Any]) -> tuple[NDArray[Any], NDArray[Any]]: ...
+
     def reverse_transform(
         self, mean: NDArray[Any], var: NDArray[Any] | None = None
     ) -> NDArray[Any] | tuple[NDArray[Any], NDArray[Any]]:
@@ -806,7 +1029,7 @@ class PreProcessor:
         a = a.dot(self.eofs)
         if self.weights is not None:
             a /= self.weights.reshape(1, -1)
-        return a**2
+        return cast(NDArray[Any], a**2)
 
     def classify_wetness_wse(self, x: NDArray[Any], elevations: NDArray[Any]) -> NDArray[np.str_]:
         """Classify each cell as always dry (AD), always flooded (AF), or transitionally flooded (TF).
@@ -994,7 +1217,7 @@ class HmsPreProcessor:
         # Standardize
         x = (x - self.x_mean) / self.x_std
 
-        return cast(NDArray[Any], x)
+        return x
 
     def calc_antecedent_precipitation_index(
         self, x: NDArray[Any], k: float = 0.85, window: int | None = None

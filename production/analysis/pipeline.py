@@ -50,7 +50,7 @@ def get_data_extracter(
 
 
 def get_hf_pre_processor(
-    config: Config, data: NDArray[Any], extracter: DataBuilder | RasReader, save: bool
+    config: Config, data: pd.DataFrame, extracter: DataBuilder | RasReader, save: bool
 ) -> PreProcessor:
     """Get a HEC-RAS preprocessor for the config and create one if necessary."""
     if not (config.hf_preprocessor_path).exists():
@@ -63,7 +63,7 @@ def get_hf_pre_processor(
     return reducer
 
 
-def get_hms_preprocessor(config: Config, data: NDArray[Any], save: bool) -> HmsPreProcessor:
+def get_hms_preprocessor(config: Config, data: pd.DataFrame, save: bool) -> HmsPreProcessor:
     """Get a HEC-HMS preprocessor for the config and create one if necessary."""
     if not (config.lf_preprocessor_path).exists():
         reducer = HmsPreProcessor()
@@ -82,7 +82,7 @@ def get_pre_processors(
 ) -> tuple[PreProcessor, PreProcessor | HmsPreProcessor]:
     """Get lf and hf data preprocessors."""
     hf_preprocessor = get_hf_pre_processor(config, hf_data, extracter, save)
-    if config.lf_model_type == "ras_upskill":
+    if config.lf_model_type in ["ras_upskill", "pseudo_surface"]:
         return hf_preprocessor, hf_preprocessor
     elif config.lf_model_type == "hms_upskill":
         return hf_preprocessor, get_hms_preprocessor(config, lf_data, save)
@@ -241,6 +241,7 @@ def pipeline(config: Config) -> None:
     ### Fit GPR ###
     t3 = time.perf_counter()
     print("Fitting GPR")
+    # gpr = GPRAS.from_file(config.model_path)
     gpr = GPRAS(config.kernel)
     gpr.fit(
         x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
@@ -254,7 +255,11 @@ def pipeline(config: Config) -> None:
     y_test_pred = hf_reducer.reverse_transform(mean_pred)
     if config.hydraulic_parameter == "depth":
         y_test_pred += hf_reducer.elevations
-    lf_test_data_depth = hf_reducer.wse_2_depth(lf_test_data) if config.lf_model_type == "ras_upskill" else lf_test_data
+    lf_test_data_depth = (
+        hf_reducer.wse_2_depth(lf_test_data)
+        if config.lf_model_type in ["ras_upskill", "pseudo_surface"]
+        else lf_test_data
+    )
     hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
     y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
 
@@ -358,6 +363,6 @@ def gen_plots_post_hoc(config: Config) -> None:
 
 
 if __name__ == "__main__":
-    config = Config.from_file("data/hms_upskill/pipeline.config.json")
+    config = Config.from_file("data/pseudo_surface/pipeline.config.json")
     pipeline(config)
     # gen_plots_post_hoc(config)

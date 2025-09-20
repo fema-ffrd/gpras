@@ -66,6 +66,14 @@ class Config:
     inflow_hms_elements: list[str] | None = None
     precip_dss_dir: str | None = None
     precip_spatial_mode_count: int | None = None
+    fluvial_lf_preprocessor_path: str | None = None
+    fluvial_hf_preprocessor_path: str | None = None
+    fluvial_gpr_path: str | None = None
+    us_bc_id_ras: str | None = None
+    ds_bc_id_ras: str | None = None
+    us_bc_id_hms: str | None = None
+    ds_bc_id_hms: str | None = None
+    centerline_path: str | None = None
 
     def __post_init__(self) -> None:
         """Create directories."""
