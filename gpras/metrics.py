@@ -16,6 +16,7 @@ def export_metric_summary(
     depth_threshold: float = 0.5,
     t_tol: int = 0,
     v_tol: float = 0,
+    hydraulic_parameter: str = "depth"
 ) -> None:
     """Export all metrics to a sqlite database."""
     # Initialize lists for per-event dataframes.
@@ -45,9 +46,9 @@ def export_metric_summary(
             "err_aoi_toi": [err_aoi_toi(x, y)],
             "err_aoi_mts": [err_aoi_mts(x, y, x_mts, y_mts)],
             "fi_aoi_toi": [fi_aoi_toi(x, y, t_tol, v_tol)],
-            "pod_mts": [pod_mts(x, y, depth_threshold, x_mts, y_mts)],
-            "rfa_mts": [rfa_mts(x, y, depth_threshold, x_mts, y_mts)],
-            "csi_mts": [csi_mts(x, y, depth_threshold, x_mts, y_mts)],
+            "pod_mts": [pod_mts(x, y, depth_threshold, x_mts, y_mts)] if hydraulic_parameter != "velocity" else [np.nan],
+            "rfa_mts": [rfa_mts(x, y, depth_threshold, x_mts, y_mts)] if hydraulic_parameter != "velocity" else [np.nan],
+            "csi_mts": [csi_mts(x, y, depth_threshold, x_mts, y_mts)] if hydraulic_parameter != "velocity" else [np.nan],
             "f2_mts": [f2_mts(x, y, x_mts, y_mts)],
             "f3_mts": [f3_mts(x, y, x_mts, y_mts)],
         }
