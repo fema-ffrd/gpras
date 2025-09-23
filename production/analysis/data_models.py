@@ -11,9 +11,11 @@ from shapely import Polygon
 
 from gpras.gpr import InductionInitializerType, KernelType, OptimizerType
 from gpras.preprocess import (
-    BoundaryConditionDataBuilder,
     DataBuilder,
+    HmsPreProcessor,
+    HmsUpskillDataBuilder,
     HydraulicParameterType,
+    PreProcessor,
     PseudoSurfaceDataBuilder,
     RasReader,
     RasUpskillDataBuilder,
@@ -60,7 +62,18 @@ class Config:
 
     lf_model_type: LFModelType
     lf_ras_stac_path: str | None = None
-    bc_ids: list[str] | None = None
+    inflow_dss_dir: str | None = None
+    inflow_hms_elements: list[str] | None = None
+    precip_dss_dir: str | None = None
+    precip_spatial_mode_count: int | None = None
+    fluvial_lf_preprocessor_path: str | None = None
+    fluvial_hf_preprocessor_path: str | None = None
+    fluvial_gpr_path: str | None = None
+    us_bc_id_ras: str | None = None
+    ds_bc_id_ras: str | None = None
+    us_bc_id_hms: str | None = None
+    ds_bc_id_hms: str | None = None
+    centerline_path: str | None = None
 
     def __post_init__(self) -> None:
         """Create directories."""
@@ -71,7 +84,12 @@ class Config:
         self.testing_data_db = str(Path(self.working_directory) / "data" / "testing.db")
         self.training_data_db = str(Path(self.working_directory) / "data" / "training.db")
         self.model_path = self.model_dir / "gpr.pkl"
-        self.preprocessor_path = self.model_dir / "preprocessor.pkl"
+        self.hf_preprocessor_path = self.model_dir / "hf_preprocessor.pkl"
+        if self.lf_model_type == "ras_upskill":
+            self.lf_preprocessor_path = self.hf_preprocessor_path
+        else:
+            self.lf_preprocessor_path = self.model_dir / "lf_preprocessor.pkl"
+        self.preprocessor_path = self.model_dir / "preprocessor.pkl"  # TODO: remove this
         self.timer_path = self.model_dir / "timers.json"
         self.metric_db_path = self.metric_dir / "performance_metrics.db"
 
@@ -138,7 +156,7 @@ class Config:
         elif self.lf_model_type == "pseudo_surface":
             return PseudoSurfaceDataBuilder
         elif self.lf_model_type == "hms_upskill":
-            return BoundaryConditionDataBuilder
+            return HmsUpskillDataBuilder
 
     @cached_property
     def data_reader(self) -> type[RasReader]:
@@ -147,3 +165,15 @@ class Config:
             return RasReader
         elif self.lf_model_type == "pseudo_surface" or self.lf_model_type == "hms_upskill":
             return RasReader  # TODO: Implement this
+        else:
+            raise RuntimeError(f"No data reader available for LF model type '{self.lf_model_type}'")
+
+    @cached_property
+    def preprocessor(self) -> type[PreProcessor | HmsPreProcessor]:
+        """The specific data builder/extracter for the LF model type."""
+        if self.lf_model_type == "ras_upskill":
+            return PreProcessor
+        elif self.lf_model_type == "hms_upskill":
+            return HmsPreProcessor
+        else:
+            raise RuntimeError(f"No preprocessor available for LF model type '{self.lf_model_type}'")
