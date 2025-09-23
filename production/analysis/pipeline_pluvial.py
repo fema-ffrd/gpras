@@ -150,8 +150,8 @@ def gen_plots(
     plot_timeseries_metrics(
         config.metric_dir / "performance_metrics.db",
         config.plot_dir / "error_timeseries",
-        metrics_field=["rmse_aoi_ts", "err_aoi_ts"],
-        metrics=["RMSE", "Mean Error"],
+        metrics_field=["rmse_aoi_ts", "err_aoi_ts", "mean_aoi_ts"],
+        metrics=["RMSE", "Mean Error", "Mean HF"],
         overlay=True,
     )
 
@@ -206,14 +206,19 @@ def pipeline(config: Config) -> None:
     x_test = reducer.transform(lf_test_data)
     y_test = reducer.transform(hf_test_data)
 
-    ### Fit GPR ###
+    # ### Fit GPR ### DCW: delete per Scott's guidance in CHAT in GPR Weekly Check-in channel sent 9/19
+    # t3 = time.perf_counter()
+    # print("Fitting GPR")
+    # gpr = GPRAS(config.kernel)
+    # gpr.fit(
+    #     x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
+    # )
+    # gpr.to_file(config.model_path)
+
+    ### Load GPR ### DCW: added per Scott's guidance in CHAT in GPR Weekly Check-in channel sent 9/19
     t3 = time.perf_counter()
-    print("Fitting GPR")
-    gpr = GPRAS(config.kernel)
-    gpr.fit(
-        x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
-    )
-    gpr.to_file(config.model_path)
+    print("Loading GPR")
+    gpr = GPRAS.from_file(config.model_path)
 
     ### Predict test data ###
     t4 = time.perf_counter()
@@ -259,16 +264,18 @@ def pipeline(config: Config) -> None:
         pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         config.metric_db_path,
+        v_tol=1.0,
+        t_tol=1,  # added by DCW
     )
-    pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
-        "production/post_processing/data/df_lf_test_data_depth.csv"
-    )  # added by DCW
-    pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
-        "production/post_processing/data/df_hf_test_data_depth.csv"
-    )  # added by DCW
-    pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
-        "production/post_processing/data/y_test_pred_depth.csv"
-    )  # added by DCW
+    # pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+    #     "production/post_processing/data/df_lf_test_data_depth.csv"
+    # )  # added by DCW
+    # pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+    #     "production/post_processing/data/df_hf_test_data_depth.csv"
+    # )  # added by DCW
+    # pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+    #     "production/post_processing/data/y_test_pred_depth.csv"
+    # )  # added by DCW
 
     with open(config.timer_path, mode="w") as f:
         json.dump(

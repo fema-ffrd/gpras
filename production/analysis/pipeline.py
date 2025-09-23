@@ -131,6 +131,15 @@ def gen_plots(
 
     map_mesh_errors(
         hf_mesh,
+        config.metric_dir / "performance_metrics_lf.db",
+        config.plot_dir / "error_maps",
+        suffix="mts_error_lf",
+        error_field="err_cell_mts",
+        error_metric="Max Depth Error LF Baseline",
+    )
+
+    map_mesh_errors(
+        hf_mesh,
         config.metric_dir / "performance_metrics.db",
         config.plot_dir / "error_maps",
         suffix="mean_error",
@@ -152,8 +161,8 @@ def gen_plots(
     plot_timeseries_metrics(
         config.metric_dir / "performance_metrics.db",
         config.plot_dir / "error_timeseries",
-        metrics_field=["rmse_aoi_ts", "err_aoi_ts"],
-        metrics=["RMSE", "Mean Error"],
+        metrics_field=["rmse_aoi_ts", "err_aoi_ts", "mean_aoi_ts"],
+        metrics=["RMSE", "Mean Error", "Mean HF"],
         overlay=True,
     )
 
@@ -208,14 +217,19 @@ def pipeline(config: Config) -> None:
     x_test = reducer.transform(lf_test_data)
     y_test = reducer.transform(hf_test_data)
 
-    ### Fit GPR ###
+    # ### Fit GPR ### DCW: delete per Scott's guidance in CHAT in GPR Weekly Check-in channel sent 9/19
+    # t3 = time.perf_counter()
+    # print("Fitting GPR")
+    # gpr = GPRAS(config.kernel)
+    # gpr.fit(
+    #     x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
+    # )
+    # gpr.to_file(config.model_path)
+
+    ### Load GPR ### DCW: added per Scott's guidance in CHAT in GPR Weekly Check-in channel sent 9/19
     t3 = time.perf_counter()
-    print("Fitting GPR")
-    gpr = GPRAS(config.kernel)
-    gpr.fit(
-        x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
-    )
-    gpr.to_file(config.model_path)
+    print("Loading GPR")
+    gpr = GPRAS.from_file(config.model_path)
 
     ### Predict test data ###
     t4 = time.perf_counter()
@@ -228,6 +242,8 @@ def pipeline(config: Config) -> None:
     hf_test_data_depth = reducer.wse_2_depth(hf_test_data)
     y_test_pred_depth = reducer.wse_2_depth(y_test_pred)
 
+    # %%
+
     ### Assess performance and plot diagnostics ###
     t5 = time.perf_counter()
     print("Calculating metrics and making performance plots")
@@ -235,7 +251,18 @@ def pipeline(config: Config) -> None:
         pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         config.metric_db_path,
+        v_tol=1.0,
+        t_tol=1,  # added by DCW
     )
+
+    export_metric_summary(
+        pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        "data/ras_upskill/metrics/performance_metrics_lf.db",
+        v_tol=1.0,
+        t_tol=1,  # added by DCW
+    )
+
     pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
         "production/post_processing/data/df_lf_test_data_depth.csv"
     )  # added by DCW
@@ -340,4 +367,4 @@ def gen_plots_post_hoc(config: Config) -> None:
 if __name__ == "__main__":
     config = Config.from_file("data/ras_upskill/pipeline.config.json")
     pipeline(config)
-    gen_plots_post_hoc(config)
+    # gen_plots_post_hoc(config)

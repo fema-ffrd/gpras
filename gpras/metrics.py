@@ -44,8 +44,8 @@ def export_metric_summary(
             "pod_mts": [pod_mts(x, y, depth_threshold, x_mts, y_mts)],
             "rfa_mts": [rfa_mts(x, y, depth_threshold, x_mts, y_mts)],
             "csi_mts": [csi_mts(x, y, depth_threshold, x_mts, y_mts)],
-            "f2_mts": [f2_mts(x, y, x_mts, y_mts)],
-            "f3_mts": [f3_mts(x, y, x_mts, y_mts)],
+            "f2_mts": [f2_mts(x, y, depth_threshold, x_mts, y_mts)],
+            "f3_mts": [f3_mts(x, y, depth_threshold, x_mts, y_mts)],
         }
         all_scalar.append(pd.DataFrame.from_dict(scalar_dict))
 
@@ -55,6 +55,7 @@ def export_metric_summary(
             "timestep": tsteps,
             "rmse_aoi_ts": rmse_aoi_ts(x, y),
             "err_aoi_ts": err_aoi_ts(x, y),
+            "mean_aoi_ts": mean_aoi_ts(x),
         }
         all_timeseries.append(pd.DataFrame.from_dict(timeseries_dict))
 
@@ -157,6 +158,11 @@ def err_aoi_mts(
 def err_aoi_ts(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
     """Calculate the mean difference across all cells at each timestep."""
     return np.asarray((x - y).mean(axis=1), dtype=np.float64)
+
+
+def mean_aoi_ts(x: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Calcualte the mean depth across all cells at each timestep in ft."""
+    return np.asarray(x.mean(axis=1), dtype=np.float64)
 
 
 def err_cell_toi(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:

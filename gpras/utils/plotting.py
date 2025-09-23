@@ -310,7 +310,7 @@ def map_mesh_errors(
 
     # map for each event
     Path(output_plot_path).mkdir(exist_ok=True, parents=True)
-    colormap_limits = (error_df["error_value"].min(), error_df["error_value"].max())
+    colormap_limits = (-3, 3)  # (error_df["error_value"].min(), error_df["error_value"].max())
     events = error_df["event"].unique()
     for event in events:
         sub = error_df[error_df["event"] == event]
