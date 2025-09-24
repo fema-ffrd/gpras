@@ -2,25 +2,34 @@
 
 import os
 import pickle
+import re
+from datetime import datetime
 from functools import cached_property
 from os import PathLike
 from pathlib import Path
-from typing import Any, Literal, Self, cast
+from typing import Any, Literal, Self, cast, overload
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyproj
 import rasterio
+import shapely
+from hecdss import HecDss
 from numpy.typing import NDArray
 from pyproj import CRS
 from rasterio.features import rasterize
+from rasterio.transform import from_origin
+from scipy.interpolate import LSQUnivariateSpline
 from shapely import Polygon
 from sklearn.decomposition import PCA, IncrementalPCA
 
+from gpras.gpr import GPRAS
 from gpras.ras.model import RasModel
 from gpras.utils.plotting import ts_clipping
 from gpras.utils.spatial_utils import ras_hdf_precip_transform
 
+HecDss.set_global_debug_level(0)
 HydraulicParameterType = Literal["wse", "depth", "velocity"]
 
 DB_PATHS = {
@@ -80,8 +89,8 @@ class DataBuilder:
         # Need to do this incrementally to save RAM.
         for p in self.plans:
             # Load
-            hf_data = self.get_hf_plan_data(p)
             lf_data = self.get_lf_plan_data(p)
+            hf_data = self.get_hf_plan_data(p)
             combo_df = pd.concat([hf_data, lf_data], axis=1)
 
             # Temporally subset
@@ -122,6 +131,10 @@ class DataBuilder:
 
     def get_cutoff(self, combo: NDArray[Any]) -> tuple[int, int]:
         """Determine when the model is 95% done changing and filter out warmup."""
+        # Trim to non-NAN values
+        if np.isnan(combo).any():
+            end_trim = np.min(np.argmax(np.isnan(combo), axis=0)[np.isnan(combo).any(axis=0)])
+            combo = combo[:end_trim, :]
         dx_dt = self._delta_cols_norm(combo)
         dx_dt = np.sum(dx_dt, axis=1) / np.sum(dx_dt)
         cum_dx_dt = np.cumsum(dx_dt)
@@ -134,7 +147,7 @@ class DataBuilder:
         """Normalized changes in feature or cell WSE across timesteps."""
         dx_dt = np.abs(np.diff(arr, axis=0))
         normalizer = np.sum(dx_dt, axis=0)
-        normalizer[normalizer == 0] = 1
+        normalizer[normalizer == 0] = 1  # Handles when WSE is constant across timesteps
         dx_dt /= normalizer
         return cast(NDArray[Any], dx_dt)
 
@@ -398,13 +411,252 @@ class RasUpskillDataBuilder(DataBuilder):
         return df
 
 
-class BoundaryConditionDataBuilder(DataBuilder):
+class RatingCurve:
+    """Stage-discharge rating curve for boundary conditions."""
+
+    def __init__(
+        self,
+        q: NDArray[Any],
+        wse: NDArray[Any],
+        drop_nonpos: bool = True,
+        qmin: float = 0,
+        qmax: float = 10e10,
+        n_knots: int = 7,
+    ) -> None:
+        """Construct class."""
+        self._preprocess_data(q, wse, drop_nonpos, qmin, qmax)
+        if len(self.q) < max(8, n_knots + 5):
+            raise ValueError(f"Not enough points ({len(q)}) for knots={n_knots}. Reduce knots or add data.")
+        self.n_knots = n_knots
+        self._fit()
+
+    def _preprocess_data(
+        self, q: NDArray[Any], wse: NDArray[Any], drop_nonpos: bool = True, qmin: float = 0, qmax: float = 10e10
+    ) -> None:
+        """Organized set of data pre-processing steps."""
+        mask = np.isfinite(q) & np.isfinite(wse)
+        if drop_nonpos:
+            mask &= q > 0
+        if qmin is not None:
+            mask &= q >= float(qmin)
+        if qmax is not None:
+            mask &= q <= float(qmax)
+
+        q = q[mask]
+        wse = wse[mask]
+
+        order = np.argsort(q)
+        self.q = q[order]
+        self.wse = wse[order]
+
+    def _fit(self) -> None:
+        """Fit the spline rating curve."""
+        qs_ = np.linspace(0.0, 1.0, self.n_knots + 2)[1:-1]
+        interior_knots = np.quantile(self.q, qs_)
+        self.spline = LSQUnivariateSpline(self.q, self.wse, t=interior_knots.tolist(), k=3)
+
+    @property
+    def fit_stats(self) -> dict[str, Any]:
+        """Statistics on how good the spline fit is."""
+        wse_pred = self.spline(self.q)
+        resid = wse_pred - self.wse
+        return {"rmse": np.sqrt(np.mean(resid**2)), "mae": np.mean(resid)}
+
+    def predict(self, q: NDArray[Any]) -> NDArray[Any]:
+        """Predict WSE from discharge."""
+        return cast(NDArray[Any], self.spline(q))
+
+
+class PseudoSurfaceDataBuilder(DataBuilder):
+    """Used to upskill boundary condition data to high-fidelity HEC-RAS using a pseudosurface estimate."""
+
+    def __init__(
+        self,
+        hf_ras: RasModel,
+        inflow_dss_dir: str,
+        inflow_hms_elements: list[str],
+        precip_dss_dir: str,
+        precip_spatial_mode_count: int,
+        fluvial_lf_preprocessor_path: str,
+        fluvial_hf_preprocessor_path: str,
+        fluvial_gpr_path: str,
+        us_bc_id_ras: str,
+        ds_bc_id_ras: str,
+        us_bc_id_hms: str,
+        ds_bc_id_hms: str,
+        centerline_path: str,
+        mesh_id: str,
+        plans: list[str],
+        area_of_interest: Polygon,
+        cell_id_field: str = "cell_id",
+        flow_convergence_threshold: float = 0.95,
+        cutoffs: dict[str, tuple[int, int]] | None = None,
+        hf_resampler: NDArray[Any] | None = None,
+    ):
+        """Construct class."""
+        super().__init__(
+            hf_ras, mesh_id, plans, area_of_interest, cell_id_field, flow_convergence_threshold, cutoffs, hf_resampler
+        )
+
+        self.inflow_dss_dir = inflow_dss_dir
+        self.inflow_hms_elements = inflow_hms_elements
+        self.us_bc_id_ras = us_bc_id_ras
+        self.ds_bc_id_ras = ds_bc_id_ras
+        self.us_bc_id_hms = us_bc_id_hms
+        self.ds_bc_id_hms = ds_bc_id_hms
+        self.centerline_path = centerline_path
+        self.centerline = gpd.read_file(self.centerline_path).to_crs(self.hf_geometry_aoi.crs)
+        self.centerline_cells = self.hf_geometry_aoi.loc[
+            self.hf_geometry_aoi.intersects(self.centerline.iloc[0].geometry)
+        ]
+        self.centerline_cell_ids = self.centerline_cells["cell_id"].values
+        self._set_centerline_interpolater()
+        self._set_cell_interpolater()
+
+        # Fluvial model
+        self.fluvia_data_builder = HmsUpskillDataBuilder(
+            hf_ras,
+            inflow_dss_dir,
+            inflow_hms_elements,
+            precip_dss_dir,
+            precip_spatial_mode_count,
+            mesh_id,
+            plans,
+            area_of_interest,
+            cell_id_field,
+            flow_convergence_threshold,
+            cutoffs,
+            hf_resampler,
+        )
+        self.fluvial_lf_preprocessor: HmsPreProcessor = HmsPreProcessor.from_file(fluvial_lf_preprocessor_path)
+        self.fluvial_hf_preprocessor: PreProcessor = PreProcessor.from_file(fluvial_hf_preprocessor_path)
+        self.fluvial_gpr: GPRAS = GPRAS.from_file(fluvial_gpr_path)
+
+    def get_lf_plan_data(self, plan: str) -> pd.DataFrame:
+        """Get estimated fluvial surface for a plan."""
+        # Get inflow timeseries
+        us_ts = self.get_hms_inflow_ts(plan, self.us_bc_id_hms)
+        ds_ts = self.get_hms_inflow_ts(plan, self.ds_bc_id_hms)
+
+        # Use RC to convert to u/s and d/s BCs
+        us_ts_wse = self.us_rating_curve.predict(us_ts.values)
+        ds_ts_wse = self.ds_rating_curve.predict(ds_ts.values)
+
+        # Interpolate centerline
+        centerline_ts_wse = self.interpolate_centerline(us_ts_wse, ds_ts_wse)
+
+        # Interpolate all cells
+        full_df = self.interpolate_surface(centerline_ts_wse)
+        full_df = np.maximum(full_df, self.cell_elevations[None, :])
+        full_df = np.maximum(full_df, self.get_lf_fluvial_est(plan))
+
+        return pd.DataFrame(full_df, columns=self.hf_geometry_aoi["cell_id"], index=us_ts.index)
+
+    def get_lf_fluvial_est(self, plan: str) -> NDArray[Any]:
+        """Use the HMS upskill GPR to predict WSE at all cells."""
+        df = self.fluvia_data_builder.get_lf_plan_data(plan)
+        reduced = self.fluvial_lf_preprocessor.transform(df.values)
+        predicted, _ = self.fluvial_gpr.predict(reduced)
+        return self.fluvial_hf_preprocessor.reverse_transform(predicted)
+
+    def get_hms_inflow_ts(self, plan: str, bc_id: str) -> pd.DataFrame:
+        """Get the outflow from a HEC-HMS element."""
+        dss = HecDss(str(Path(self.inflow_dss_dir) / f"{plan}.dss"))
+        dss_path = [str(i) for i in dss.get_catalog() if bc_id == i.B and i.C == "FLOW"][0]
+        data = dss.get(dss_path)
+        return pd.DataFrame(data.values, index=data.times, columns=[f"{bc_id}_FLOW"])
+
+    @cached_property
+    def bc_ts(self) -> pd.DataFrame:
+        """Get boundary condition timeseries for all plans."""
+        return pd.concat([self.get_ref_line_df(i) for i in self.plans], axis=0)
+
+    @cached_property
+    def us_rating_curve(self) -> RatingCurve:
+        """Make a rating curve for the upstream boundary condition."""
+        q = self.bc_ts[self.us_bc_id_ras + "_flows"].values
+        wse = self.bc_ts[self.us_bc_id_ras + "_wse"].values
+        return RatingCurve(q, wse)
+
+    @cached_property
+    def ds_rating_curve(self) -> RatingCurve:
+        """Make a rating curve for the downstream boundary condition."""
+        q = self.bc_ts[self.ds_bc_id_ras + "_flows"].values
+        wse = self.bc_ts[self.ds_bc_id_ras + "_wse"].values
+        return RatingCurve(q, wse)
+
+    def interpolate_centerline(self, us_df: pd.DataFrame, ds_df: pd.DataFrame) -> pd.DataFrame:
+        """Interpolate from boundary condition WSEs along stream centerline."""
+        _range = us_df - ds_df
+        return us_df - np.outer(_range, self.cl_interpolater)
+
+    def interpolate_surface(self, cl_df: NDArray[Any]) -> NDArray[Any]:
+        """Interpolate all cells (thiessen polygon) using centerline WSE estimates."""
+        return cl_df[:, self.cell_interpolater]
+
+    def _set_centerline_interpolater(self) -> None:
+        """Set the interploter to get streamline cell WSE from boundary WSEs."""
+        us_wse_col = f"{self.us_bc_id_ras}_wse"
+        ds_wse_col = f"{self.ds_bc_id_ras}_wse"
+        us_q_col = f"{self.us_bc_id_ras}_flows"
+        ds_q_col = f"{self.ds_bc_id_ras}_flows"
+
+        # Get data
+        store = []
+        for p in self.plans:
+            bc_data = self.get_ref_line_df(p)[[us_wse_col, ds_wse_col, us_q_col, ds_q_col]]
+            cell_data = self.get_hf_plan_data(p)
+            cell_data = cell_data.iloc[:, cell_data.columns.isin(self.centerline_cell_ids)].copy()
+            combo = pd.concat([bc_data, cell_data], axis=1)
+            mask = (bc_data[[us_q_col, ds_q_col]] > 0).any(axis=1)
+            combo = combo[mask].copy()
+            store.append(combo)
+        all_data: pd.DataFrame = pd.concat(store, axis=0)
+
+        # Derive pct decrease
+        wses = all_data[self.centerline_cell_ids].values
+        us_wse = all_data[us_wse_col].values
+        ds_wse = all_data[ds_wse_col].values
+        range_ = np.subtract(us_wse, ds_wse)
+        self.cl_interpolater = np.median(((us_wse[:, None] - wses) / range_[:, None]), axis=0)
+
+    def _set_cell_interpolater(self) -> None:
+        """Set the thiessen polygon interpolater for all cells."""
+        nearest = gpd.sjoin_nearest(self.hf_geometry_aoi, self.centerline_cells, how="left", distance_col="dist")
+        nearest = nearest.drop_duplicates(subset="cell_id_left")
+        lookup = {cell: ind for ind, cell in enumerate(self.centerline_cell_ids)}
+        self.cell_interpolater = nearest["cell_id_right"].map(lookup).values
+
+    @cached_property
+    def cell_stations(self) -> NDArray[Any]:
+        """Get the station along the stream centerline of each centerline cell."""
+        cell_perimeter = self.hf_geometry_aoi.copy()
+        cell_perimeter["geometry"] = cell_perimeter.boundary
+        intersections = gpd.overlay(cell_perimeter, self.centerline, how="intersection", keep_geom_type=False)
+        intersection_points = intersections[intersections.geometry.type.isin(["Point", "MultiPoint"])].reset_index(
+            drop=True
+        )
+        intersection_points = intersection_points.explode(index_parts=False).reset_index(drop=True)
+        stations = []
+        line_geom = self.centerline.iloc[0].geometry
+        for _, row in intersection_points.iterrows():
+            station = line_geom.project(row.geometry)
+            stations.append(station)
+        intersection_points["distance"] = stations
+        cell_dists = intersection_points.groupby("cell_id", as_index=False)["distance"].mean()
+        return cast(NDArray[Any], cell_dists.set_index("cell_id").loc[self.centerline_cell_ids, "distance"].values)
+
+
+class HmsUpskillDataBuilder(DataBuilder):
     """Used to build datasets for upskilling precip and inflow timeseries to high-fidelity HEC-RAS."""
 
     def __init__(
         self,
         hf_ras: RasModel,
-        bc_ids: list[str],
+        inflow_dss_dir: str,
+        inflow_hms_elements: list[str],
+        precip_dss_dir: str,
+        precip_spatial_mode_count: int,
         mesh_id: str,
         plans: list[str],
         area_of_interest: Polygon,
@@ -412,42 +664,87 @@ class BoundaryConditionDataBuilder(DataBuilder):
         flow_convergence_threshold: float = 0.95,
         cutoffs: dict[str, tuple[int, int]] | None = None,
         hf_resampler: NDArray[Any] | None = None,
-        precip_spatial_mode_count: int = 5,
     ):
         """Construct class."""
         super().__init__(
             hf_ras, mesh_id, plans, area_of_interest, cell_id_field, flow_convergence_threshold, cutoffs, hf_resampler
         )
+
+        self.inflow_dss_dir = inflow_dss_dir
+        self.inflow_hms_elements = inflow_hms_elements
+        self.precip_dss_dir = precip_dss_dir
         self.precip_spatial_mode_count = precip_spatial_mode_count
-        self.bc_ids = bc_ids
 
     def get_lf_plan_data(self, plan: str) -> pd.DataFrame:
         """Get boundary condition features for the HF model."""
         all_cols = []
-        for bc in self.bc_ids:
-            all_cols.append(self.get_bc_ts(plan, bc))  # TODO: Update to inflow (ref line) rather than baseflow
-        all_cols.append(self.get_precip_ts(plan))
+        for bc in self.inflow_hms_elements:
+            all_cols.append(self.get_hms_inflow_ts(plan, bc))
+        all_cols.append(self.get_hms_precip_ts(plan))
         return pd.concat(all_cols, axis=1).fillna(0)
 
+    def get_hms_inflow_ts(self, plan: str, bc_id: str) -> pd.DataFrame:
+        """Get the outflow from a HEC-HMS element."""
+        dss = HecDss(str(Path(self.inflow_dss_dir) / f"{plan}.dss"))
+        dss_path = [str(i) for i in dss.get_catalog() if bc_id[0] == i.B and bc_id[1] == i.C][0]
+        data = dss.get(dss_path)
+        return pd.DataFrame(data.values, index=data.times, columns=[f"{bc_id[0]}_{bc_id[1]}"])
 
-class PseudoSurfaceDataBuilder(DataBuilder):
-    """Used to build datasets for upskilling a predicted WSE surface to high-fidelity HEC-RAS."""
+    def get_hms_precip_ts(self, plan: str) -> pd.DataFrame:
+        """Geet a HEC-HMS excess precip grid timeseries."""
+        # Load DSS
+        dss = HecDss(str(Path(self.precip_dss_dir) / f"{plan}.dss"))
 
-    def __init__(
-        self,
-        hf_ras: RasModel,
-        mesh_id: str,
-        plans: list[str],
-        area_of_interest: Polygon,
-        cell_id_field: str = "cell_id",
-        flow_convergence_threshold: float = 0.95,
-        cutoffs: dict[str, tuple[int, int]] | None = None,
-        hf_resampler: NDArray[Any] | None = None,
-    ):
-        """Construct class."""
-        super().__init__(
-            hf_ras, mesh_id, plans, area_of_interest, cell_id_field, flow_convergence_threshold, cutoffs, hf_resampler
-        )
+        # Process
+        ts = []
+        dt_index = []
+        for i in dss.get_catalog():
+            t = re.search(r"\d{2}[A-Za-z]{3}\d{4}:\d{4}", str(i))
+            if not t:
+                raise ValueError(f"Could not parse datetime from DSS catalog entry: {i}")
+            dt_index.append(datetime.strptime(t.group(), "%d%b%Y:%H%M"))
+            record = dss.get(str(i))
+            data = np.flipud(record.data)
+            ts.append(data[self._aoi_precip_mask])
+        vals = np.array(ts)
+        return pd.DataFrame(vals, index=dt_index, columns=[f"precip_{i}" for i in range(vals.shape[1])])
+
+    @cached_property
+    def _aoi_precip_mask(self) -> NDArray[Any]:
+        """Precipitation array mask for area of interest (applies to HMS dss file data)."""
+        # Load DSS
+        plan = self.plans[0]
+        dss = HecDss(str(Path(self.precip_dss_dir) / f"{plan}.dss"))
+
+        # Get AOI mask
+        catalog = dss.get_catalog()
+        record_template = dss.get(next(iter(catalog)))
+
+        # Make transform
+        pixel_size = record_template.cellSize
+        height = record_template.numberOfCellsY
+
+        upper_left_x = (record_template.lowerLeftCellX) * pixel_size
+        upper_left_y = (record_template.lowerLeftCellY + height) * pixel_size
+        transform = from_origin(upper_left_x, upper_left_y, pixel_size, pixel_size)
+
+        # Get mask
+        src = pyproj.CRS(self.hf_geometry_aoi.crs)
+        dest = pyproj.CRS(record_template.srsDefinition)
+        project = pyproj.Transformer.from_crs(src, dest, always_xy=True).transform
+        shape = shapely.ops.transform(project, self.area_of_interest)
+        shapes = [(shape, 1)]
+
+        mask = rasterize(
+            shapes,
+            out_shape=(record_template.numberOfCellsY, record_template.numberOfCellsX),
+            transform=transform,
+            fill=0,  # outside polygon
+            all_touched=True,
+            dtype="uint8",
+        ).astype(bool)
+
+        return cast(NDArray[Any], mask)
 
 
 class RasReader:
@@ -685,30 +982,54 @@ class PreProcessor:
         d[d < 0] = 0
         return d
 
-    def reverse_transform(self, x: NDArray[Any]) -> NDArray[Any]:
+    @overload
+    def reverse_transform(self, mean: NDArray[Any]) -> NDArray[Any]: ...
+    @overload
+    def reverse_transform(self, mean: NDArray[Any], var: NDArray[Any]) -> tuple[NDArray[Any], NDArray[Any]]: ...
+
+    def reverse_transform(
+        self, mean: NDArray[Any], var: NDArray[Any] | None = None
+    ) -> NDArray[Any] | tuple[NDArray[Any], NDArray[Any]]:
         """Reverse the PCA transformation back to the original space.
 
         Reconstructs the full water surface elevation field, filling in
         always-dry cells with their original elevation values.
 
         Args:
-            x (NDArray[Any]): Array of shape (samples, spatial_mode_count) in EOF space.
+            mean (NDArray[Any]): Array of GPR mean estimates of shape (samples, spatial_mode_count) in EOF space.
+            var (NDArray[Any]): Array of GPR variance estimates of shape (samples, spatial_mode_count) in EOF space.
 
         Returns:
             NDArray[Any]: Array of shape (samples, cells) in original space.
         """
-        x = (x * self.x_std) + self.x_mean
-        x = np.dot(x, self.eofs)
+        mean = (mean * self.x_std) + self.x_mean
+        mean = np.dot(mean, self.eofs)
         if self.weights is not None:
-            x /= self.weights
-        x += self.input_mean
-        x_full = np.empty((x.shape[0], self.dry_indices.shape[0]))
+            mean /= self.weights
+        mean += self.input_mean
+        x_full = np.empty((mean.shape[0], self.dry_indices.shape[0]))
         if self.hydraulic_parameter == "depth":
             x_full[:, self.dry_indices] = 0
         else:
             x_full[:, self.dry_indices] = self.elevations[self.dry_indices]
-        x_full[:, ~self.dry_indices] = x
-        return x_full
+        x_full[:, ~self.dry_indices] = mean
+        if var is None:
+            return x_full
+        else:
+            var_prop = var.dot(self._linear_transform_for_var)
+            var_prop_full = np.empty((var_prop.shape[0], self.dry_indices.shape[0]))
+            var_prop_full[:, self.dry_indices] = 0
+            var_prop_full[:, ~self.dry_indices] = var_prop
+            return x_full, var_prop_full
+
+    @cached_property
+    def _linear_transform_for_var(self) -> NDArray[Any]:
+        """Squared linear transform for error propogation in reverse transform."""
+        a = np.diag(self.x_std)
+        a = a.dot(self.eofs)
+        if self.weights is not None:
+            a /= self.weights.reshape(1, -1)
+        return cast(NDArray[Any], a**2)
 
     def classify_wetness_wse(self, x: NDArray[Any], elevations: NDArray[Any]) -> NDArray[np.str_]:
         """Classify each cell as always dry (AD), always flooded (AF), or transitionally flooded (TF).
@@ -779,17 +1100,20 @@ class PreProcessor:
         return cls(**d)
 
 
-class BoundaryConditionPreProcessor:
+class HmsPreProcessor:
     """Preprocessor for feature engineering from precip and inflow boundary conditions."""
 
     def __init__(
         self,
         precip_spatial_mode_count: int = 0,
+        bc_mask: NDArray[Any] | None = None,
+        precip_mask: NDArray[Any] | None = None,
         eofs: NDArray[Any] | None = None,
         eigenvalues: NDArray[Any] | None = None,
         n_samples_fit: float = 0,
         x_mean: NDArray[Any] | None = None,
         x_std: NDArray[Any] | None = None,
+        input_mean: NDArray[Any] | None = None,
     ):
         """Preprocessor class constructor.
 
@@ -797,38 +1121,54 @@ class BoundaryConditionPreProcessor:
 
         Args:
             precip_spatial_mode_count (int): Number of spatial modes for PCA. Defaults to 0.
+            bc_mask (NDArray[Any] | None, optional): Boolean mask for boundary condition columns. Defaults to None.
+            precip_mask (NDArray[Any] | None, optional): Boolean mask for precipitation columns. Defaults to None.
             eofs (NDArray[Any] | None, optional): Empirical Orthogonal Functions (EOFs) from PCA. Defaults to None.
             eigenvalues (NDArray[Any] | None, optional): Eigenvalues from PCA. Defaults to None.
             n_samples_fit (float, optional): Number of samples used during PCA fitting. Defaults to 0.
             x_mean (NDArray[Any] | None, optional): Mean of spatial modes. Defaults to None.
             x_std (NDArray[Any] | None, optional): Standard deviation of spatial modes. Defaults to None.
+            input_mean (NDArray[Any] | None, optional): Input data means. Defaults to None.
 
         Returns:
             None
         """
         self.precip_spatial_mode_count: int = precip_spatial_mode_count
-        self.eofs: NDArray[Any] = eofs or np.empty(0, dtype=float)
-        self.eigenvalues: NDArray[Any] = eigenvalues or np.empty(0, dtype=float)
+        self.bc_mask = bc_mask if bc_mask is not None else np.empty(0, dtype=float)
+        self.precip_mask = precip_mask if precip_mask is not None else np.empty(0, dtype=float)
+        self.eofs: NDArray[Any] = eofs if eofs is not None else np.empty(0, dtype=float)
+        self.eigenvalues: NDArray[Any] = eigenvalues if eigenvalues is not None else np.empty(0, dtype=float)
         self.n_samples_fit = n_samples_fit
-        self.x_mean: NDArray[Any] = x_mean or np.empty(0, dtype=float)
-        self.x_std: NDArray[Any] = x_std or np.empty(0, dtype=float)
+        self.x_mean: NDArray[Any] = x_mean if x_mean is not None else np.empty(0, dtype=float)
+        self.x_std: NDArray[Any] = x_std if x_std is not None else np.empty(0, dtype=float)
+        self.input_mean: NDArray[Any] = input_mean if input_mean is not None else np.empty(0, dtype=float)
 
     def fit(
         self,
-        x_bc: NDArray[Any],
-        x_precip: NDArray[Any],
+        x: NDArray[Any],
+        bc_mask: NDArray[Any],
+        precip_mask: NDArray[Any],
         precip_spatial_mode_count: int | None = None,
     ) -> None:
         """Fit the preprocessor to the input data using PCA.
 
         Args:
-            x_bc (NDArray[Any]): Array of shape (samples, boundary conditions) representing discharge into the model.
-            x_precip (NDArray[Any]): Array of shape (samples, raster cells) representing precip. into the model.
+            x (NDArray[Any]): Array of shape (samples, features) representing discharge+precip. into the model.
+            bc_mask (NDArray[Any] | None, optional): Boolean mask for boundary condition columns. Defaults to None.
+            precip_mask (NDArray[Any] | None, optional): Boolean mask for precipitation columns. Defaults to None.
             precip_spatial_mode_count (int): Optional number of spatial modes to use for precipitation PCA.
 
         Returns:
             None
         """
+        self.input_mean = x.mean(axis=0)
+        x = x - self.input_mean
+
+        self.bc_mask = bc_mask
+        self.precip_mask = precip_mask
+        x_bc = x[:, self.bc_mask]
+        x_precip = x[:, self.precip_mask]
+
         # Fit PCA
         pca = IncrementalPCA()  # Documentation says that the function can batch itself
         pca.fit(x_precip)
@@ -852,14 +1192,19 @@ class BoundaryConditionPreProcessor:
         precip_reduced = np.dot(x_precip, self.eofs.T)
 
         # Combine all features
-        x = np.concatenate([x_bc, precip_reduced, api_1, api_2], axis=1)
+        x = np.concatenate([x_bc, precip_reduced, avg_precip[:, None], api_1, api_2], axis=1)
 
         # Set second round of standardization
         self.x_mean = x.mean(axis=0)
-        self.x_std = x.std(axis=0)
+        self.x_std = np.array([np.std(x[x[:, i] != 0, i]) for i in range(x.shape[1])])
 
-    def transform(self, x_bc: NDArray[Any], x_precip: NDArray[Any]) -> NDArray[Any]:
+    def transform(self, x: NDArray[Any]) -> NDArray[Any]:
         """Transform boundary condition data to reduced data space and derive features."""
+        # Split feature types.
+        x = x - self.input_mean
+        x_bc = x[:, self.bc_mask]
+        x_precip = x[:, self.precip_mask]
+
         # Derive precip features
         avg_precip = np.mean(x_precip, axis=1)
         api_1 = self.calc_antecedent_precipitation_index(avg_precip)
@@ -867,20 +1212,50 @@ class BoundaryConditionPreProcessor:
         precip_reduced = np.dot(x_precip, self.eofs.T)
 
         # Combine all features
-        x = np.concatenate([x_bc, precip_reduced, api_1, api_2], axis=1)
+        x = np.concatenate([x_bc, precip_reduced, avg_precip[:, None], api_1, api_2], axis=1)
 
         # Standardize
         x = (x - self.x_mean) / self.x_std
 
-        return cast(NDArray[Any], x)
+        return x
 
-    def calc_antecedent_precipitation_index(self, x: NDArray[Any], k: float = 0.85, window: int = 24) -> NDArray[Any]:
+    def calc_antecedent_precipitation_index(
+        self, x: NDArray[Any], k: float = 0.85, window: int | None = None
+    ) -> NDArray[Any]:
         """Get precipitation index for a timeseries.
 
         https://glossary.ametsoc.org/wiki/Antecedent_precipitation_index. Exponential decay kernel.
         """
+        if window is None:
+            window = len(x)
         weights = np.array([k**i for i in range(window)])
         return np.convolve(x, weights, mode="full")[: len(x), np.newaxis]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Dictionary representation of class for serialization."""
+        return {
+            "precip_spatial_mode_count": self.precip_spatial_mode_count,
+            "bc_mask": self.bc_mask,
+            "precip_mask": self.precip_mask,
+            "eofs": self.eofs,
+            "eigenvalues": self.eigenvalues,
+            "n_samples_fit": self.n_samples_fit,
+            "x_mean": self.x_mean,
+            "x_std": self.x_std,
+            "input_mean": self.input_mean,
+        }
+
+    def to_file(self, out_path: str | PathLike[str]) -> None:
+        """Save dict representation of self to file."""
+        with open(out_path, mode="wb") as f:
+            pickle.dump(self.to_dict(), f)
+
+    @classmethod
+    def from_file(cls, in_path: str | PathLike[str]) -> Self:
+        """Deserialize instance of self from a file representation."""
+        with open(in_path, mode="rb") as f:
+            d = pickle.load(f)
+        return cls(**d)
 
 
 def compute_norths_rule(pca: PCA | IncrementalPCA) -> int:

@@ -41,36 +41,33 @@ OptimizerType = Literal["two-stage", "adam", "L-BFGS-B", "stochastic", "diffenti
 InductionInitializerType = Literal["kmeans", "grid"]
 
 
-def _optimize_differential_evolutions(model: SGPR, popsize: int = 15, maxiter: int = 500) -> None:
+def _optimize_differential_evolutions(model: SGPR, popsize: int = 15, max_iter: int = 500) -> None:
     """Use differential evolution to optimize any trainable model parameters."""
+    # DE blows up when it includes optimization of inducing points.
+    # Optimize inducing points first
+    gpflow.set_trainable(model, False)
+    gpflow.set_trainable(model.inducing_variable.Z, True)
+    _optimize_adam(model, max_iter=3000)
+
     # Hyperparameter bounds
     param_bounds = [(-1, 1), (-1, 1), (-3, 0)]
-
-    # Inducing variable bounds
-    x = model.data[0].numpy()
-    z_shape = model.inducing_variable.Z.shape
-    mins, maxs = x.min(axis=0), x.max(axis=0)
-    for d in range(z_shape[1]):
-        param_bounds.extend([(mins[d], maxs[d])] * z_shape[0])
 
     # Define objective
     def objective(params: list[NDArray[Any]]) -> Any:
         model.kernel.variance.assign(10 ** params[0])
         model.kernel.lengthscales.assign(10 ** params[1])
         model.likelihood.variance.assign(10 ** params[2])
-        model.inducing_variable.Z = np.array(params[3:]).reshape(z_shape)
 
         print(model.training_loss().numpy())
         return model.training_loss().numpy()
 
     # Run optimization
-    result = differential_evolution(objective, param_bounds, popsize=popsize, maxiter=maxiter)
+    result = differential_evolution(objective, param_bounds, popsize=popsize, maxiter=max_iter)
 
     # Set results
     model.kernel.variance.assign(10 ** result.x[0])
     model.kernel.lengthscales.assign(10 ** result.x[1])
     model.likelihood.variance.assign(10 ** result.x[2])
-    model.inducing_variable.Z = np.array(result.x[3:]).reshape(z_shape)
 
 
 def _optimize_multi_start(model: SGPR, n_starts: int = 40, iter_initial: int = 20, iter_final: int = 1000) -> None:
@@ -128,6 +125,23 @@ def _optimize_two_stage(model: SGPR, max_iter: int = 100) -> None:
     gpflow.set_trainable(model.inducing_variable.Z, True)
 
 
+def _optimize_three_stage(model: SGPR, max_iter: int = 100) -> None:
+    """Use Adam algorithm to optimize any trainable model parameters but optimizing inducing points first."""
+    # Optimize inducing points
+    gpflow.set_trainable(model, False)
+    gpflow.set_trainable(model.inducing_variable.Z, True)
+    _optimize_adam(model, max_iter)
+
+    # Optimize other parameters
+    gpflow.set_trainable(model, True)
+    gpflow.set_trainable(model.inducing_variable.Z, False)
+    _optimize_bfgs(model, max_iter)
+
+    # Polish
+    gpflow.set_trainable(model.inducing_variable.Z, True)
+    _optimize_bfgs(model, max_iter)
+
+
 def _optimize_adam(model: SGPR, max_iter: int) -> None:
     """Use Adam algorithm to optimize any trainable model parameters."""
     opt = tf.keras.optimizers.Adam()
@@ -144,6 +158,25 @@ def _optimize_adam(model: SGPR, max_iter: int) -> None:
         step()
 
 
+def _optimize_adadelta(model: SGPR, max_iter: int) -> tf.Tensor:
+    """Use Adam algorithm to optimize any trainable model parameters."""
+    opt = tf.keras.optimizers.Adadelta()
+    return _optimize_tf(model, max_iter, opt)
+
+
+def _optimize_tf(model: SGPR, max_iter: int, opt: tf.Tensor) -> tf.Tensor:
+    @tf.function  # type: ignore[misc]
+    def train_loop(max_iter: int) -> Any:
+        for _ in tf.range(max_iter):
+            with tf.GradientTape() as tape:
+                loss = model.training_loss()
+            grads = tape.gradient(loss, model.trainable_variables)
+            opt.apply_gradients(zip(grads, model.trainable_variables, strict=False))
+        return loss
+
+    return train_loop(max_iter)
+
+
 def _optimize_bfgs(model: SGPR, max_iter: int) -> None:
     """Use Scipy Limited-memory BFGS (gradient descent) to optimize any trainable model parameters."""
     opt = gpflow.optimizers.Scipy()
@@ -157,7 +190,9 @@ def _optimize_bfgs(model: SGPR, max_iter: int) -> None:
 
 OPTIMIZERS: dict[str, Any] = {
     "two-stage": _optimize_two_stage,
+    "three-stage": _optimize_three_stage,
     "adam": _optimize_adam,
+    "adadelta": _optimize_adadelta,
     "L-BFGS-B": _optimize_bfgs,
     "stochastic": _optimize_multi_start,
     "diffential_evolution": _optimize_differential_evolutions,
@@ -234,6 +269,9 @@ class GPRAS:
         # Make an inducing variable
         inducing = self._create_inducing(x, n_inducing, inducing_initializer)
 
+        # Initialize other hyperparameters
+        ini_length = np.mean(abs(x))
+
         # Create models for each spatial mode
         self.models = []
         for i in range(y.shape[1]):
@@ -241,7 +279,7 @@ class GPRAS:
             y_i = np.c_[y[:, i]]
 
             # Initialize model
-            kernel_i = self.kernel()
+            kernel_i = self.kernel(variance=1, lengthscales=ini_length)
             model = SGPR(data=(x, y_i), kernel=kernel_i, inducing_variable=inducing)
 
             # Set priors to avoid pathological models (hopefully)

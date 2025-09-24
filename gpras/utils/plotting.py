@@ -98,7 +98,16 @@ def ec_pairplot(
     g.savefig(Path(out_path))
 
 
-def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, out_dir: str | Path) -> None:
+def ec_timeseries(
+    x: NDArray[Any],
+    y: NDArray[Any],
+    modes_to_plot: int,
+    ind: pd.Index,
+    out_dir: str | Path,
+    low_est: NDArray[Any] | None = None,
+    est: NDArray[Any] | None = None,
+    high_est: NDArray[Any] | None = None,
+) -> None:
     """Plot EOF time series for low- and high-fidelity models by event plan.
 
     Args:
@@ -107,6 +116,9 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.
         modes_to_plot (int): Number of EOF modes to plot.
         out_dir (str): Dirctory to save the plots.
         ind (pd.Index): Index object (e.g., MultiIndex) used to group samples by plan.
+        low_est (NDArray[Any], optional): Low-fidelity EOF coefficients upper CI.
+        est (NDArray[Any], optional): Low-fidelity EOF coefficients mean estimate.
+        high_est (NDArray[Any], optional): Low-fidelity EOF coefficients upper CI.
 
     Returns:
         None
@@ -118,6 +130,16 @@ def ec_timeseries(x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.
         for i, ax in enumerate(axs):
             ax.plot(y[cum_index : cum_index + count, i], label="HF model", c=COMMON_COLORS[0])
             ax.plot(x[cum_index : cum_index + count, i], label="LF model", c=COMMON_COLORS[1])
+            if low_est is not None and est is not None and high_est is not None:
+                ax.plot(est[cum_index : cum_index + count, i], label="GPR", c="k")
+                ax.fill_between(
+                    np.arange(count),
+                    low_est[cum_index : cum_index + count, i],
+                    high_est[cum_index : cum_index + count, i],
+                    label="CI",
+                    fc="k",
+                    alpha=0.1,
+                )
             ax.set_ylabel(f"EOF_{i}")
             ax.set_yticks([], labels=[])
         cum_index += count
@@ -217,26 +239,47 @@ def plot_pca_summary(
     plt.close(fig)
 
 
-def ec_timeseries_alt(
-    x: NDArray[Any], y: NDArray[Any], modes_to_plot: int, ind: pd.Index, x_labels: list[str], out_dir: str | Path
-) -> None:
+def ec_timeseries_alt(x: pd.DataFrame, y: pd.DataFrame, out_dir: str | Path) -> None:
     """Plot EOF time series for low- and high-fidelity models by event plan (alt: all LF ECs on every plot)."""
-    events = np.unique(ind.get_level_values(0), return_counts=True)
-    cum_index = 0
-    for event_label, count in zip(*events, strict=False):
-        fig, axs = plt.subplots(nrows=modes_to_plot, figsize=(6.5, 2 * modes_to_plot), sharex=True)
+    modes_to_plot = len(y.columns)
+    for event_label in x.index.get_level_values(0).unique():
+        fig, axs = plt.subplots(nrows=modes_to_plot, figsize=(6.5, 4 * modes_to_plot), sharex=True)
+        sub_x = x.loc[event_label]
+        sub_y = y.loc[event_label]
         for i, ax in enumerate(axs):
-            ax.plot(y[cum_index : cum_index + count, i], label="HF model", c="k", lw=2)
-            for j in range(x.shape[1]):
-                ax.plot(x[cum_index : cum_index + count, j], label=x_labels[j], alpha=0.6, lw=1)
-            ax.set_ylabel(f"EOF_{i}")
+            ax.plot(sub_y[sub_y.columns[i]], label="HF model", c="k", lw=2)
+            for j in range(len(sub_x.columns)):
+                ax.plot(sub_x[sub_x.columns[j]], label=sub_x.columns[j], alpha=0.6, lw=1)
+            ax.set_ylabel(sub_y.columns[i])
             ax.set_yticks([], labels=[])
-        cum_index += count
         axs[0].legend()
         axs[-1].set_xlabel("Timestep")
         fig.suptitle(f"Plan {event_label}")
         apply_formatting(fig, axs)
-        fig.savefig(Path(out_dir) / f"Plan_{event_label}.png")
+        fig.savefig(Path(out_dir) / f"Plan_{event_label}.png", dpi=600)
+        plt.close(fig)
+
+
+def appr_3_pairplot(x: pd.DataFrame, y: pd.DataFrame, out_dir: str | Path) -> None:
+    """Plot EOF time series for low- and high-fidelity models by event plan (alt: all LF ECs on every plot)."""
+    rows = len(y.columns)
+    cols = len(x.columns)
+    for event_label in x.index.get_level_values(0).unique():
+        fig, axs = plt.subplots(nrows=rows, ncols=cols, figsize=(4 * cols, 4 * rows))
+        sub_x = x.loc[event_label]
+        sub_y = y.loc[event_label]
+        for ind_x, _x in enumerate(x.columns):
+            for ind_y, _y in enumerate(y.columns):
+                if ind_y > ind_x:
+                    continue
+                axs[ind_y, ind_x].scatter(sub_x[_x], sub_y[_y], c="k", alpha=0.5)
+        for ind, _y in enumerate(y.columns):
+            axs[ind, 0].set_ylabel(_y)
+        for ind, _x in enumerate(x.columns):
+            axs[ind, 0].set_xlabel(_x)
+        fig.suptitle(f"Plan {event_label}")
+        # apply_formatting(fig, axs)
+        fig.savefig(Path(out_dir) / f"Plan_{event_label}.png", dpi=600)
         plt.close(fig)
 
 
