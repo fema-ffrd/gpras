@@ -1,4 +1,4 @@
-"""Example script for running a GPR model training workflow."""
+"""Example script for running a GPR model training workflow. Pluvial area only."""
 
 import inspect
 import json
