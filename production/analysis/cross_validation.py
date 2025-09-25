@@ -73,7 +73,11 @@ def run_cv_serial(config: CVConfig, options: dict[str, Any], base_dir: Path) -> 
             print(f" - {k} = {options[k][i]}")
             setattr(config, k, options[k][i])
             if k == "spatial_mode_count":  # Can't reuse pre-processor
-                config.preprocessor_path = out_dir / "model" / "preprocessor.pkl"
+                config.hf_preprocessor_path = out_dir / "model" / "hf_preprocessor.pkl"
+                if config.lf_model_type == "ras_upskill":
+                    config.lf_preprocessor_path = config.hf_preprocessor_path
+                else:
+                    config.lf_preprocessor_path = out_dir / "model" / "lf_preprocessor.pkl"
                 config.model_dir = out_dir / "model"
                 config.model_dir.mkdir(exist_ok=True)
         pipeline(config)
@@ -126,9 +130,9 @@ def run_optimization_method(config_path: str) -> None:
 
 
 if __name__ == "__main__":
-    config_path = "data/cross_validation/cv.config.json"
+    config_path = "data/cv/pseudo_surface/pipeline.config.json"
     setup(config_path)
     # run_optimization_method(config_path)
-    # run_kernels(config_path)
-    # run_spatial_modes(config_path)
+    run_kernels(config_path)
+    run_spatial_modes(config_path)
     run_inducing_points(config_path)

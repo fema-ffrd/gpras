@@ -9,6 +9,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from scipy.stats import norm
 
 from gpras.gpr import GPRAS
 from gpras.metrics import export_metric_summary
@@ -82,7 +83,7 @@ def get_pre_processors(
 ) -> tuple[PreProcessor, PreProcessor | HmsPreProcessor]:
     """Get lf and hf data preprocessors."""
     hf_preprocessor = get_hf_pre_processor(config, hf_data, extracter, save)
-    if config.lf_model_type in ["ras_upskill", "pseudo_surface"]:
+    if config.lf_model_type in ["ras_upskill", "pseudo_surface", "ras_interpolate"]:
         return hf_preprocessor, hf_preprocessor
     elif config.lf_model_type == "hms_upskill":
         return hf_preprocessor, get_hms_preprocessor(config, lf_data, save)
@@ -241,23 +242,32 @@ def pipeline(config: Config) -> None:
     ### Fit GPR ###
     t3 = time.perf_counter()
     print("Fitting GPR")
-    # gpr = GPRAS.from_file(config.model_path)
-    gpr = GPRAS(config.kernel)
-    gpr.fit(
-        x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
-    )
-    gpr.to_file(config.model_path)
+    if True:  # Manually set to train or load
+        gpr = GPRAS(config.kernel)
+        gpr.fit(
+            x,
+            y,
+            config.inducing_pt_count,
+            config.induction_pt_initializer,
+            config.optimizer,
+            **config.optimizer_kwargs,  #
+        )
+        gpr.to_file(config.model_path)
+    gpr = GPRAS.from_file(config.model_path)
 
     ### Predict test data ###
     t4 = time.perf_counter()
     print("Making predictions")
-    mean_pred, _ = gpr.predict(x_test)
-    y_test_pred = hf_reducer.reverse_transform(mean_pred)
+    mean_pred, var_pred = gpr.predict(x_test)
+    y_test_pred, y_test_var = hf_reducer.reverse_transform(mean_pred, var_pred)
+    _ = y_test_pred + (norm.ppf(0.975) * np.sqrt(y_test_var))  # High est
+    _ = y_test_pred + (norm.ppf(0.025) * np.sqrt(y_test_var))  # Low est
+
     if config.hydraulic_parameter == "depth":
         y_test_pred += hf_reducer.elevations
     lf_test_data_depth = (
         hf_reducer.wse_2_depth(lf_test_data)
-        if config.lf_model_type in ["ras_upskill", "pseudo_surface"]
+        if config.lf_model_type in ["ras_upskill", "pseudo_surface", "ras_interpolate"]
         else lf_test_data
     )
     hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
@@ -269,6 +279,7 @@ def pipeline(config: Config) -> None:
     export_metric_summary(
         pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        pd.DataFrame(np.sqrt(y_test_var), index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         config.metric_db_path,
     )
     with open(config.timer_path, mode="w") as f:
@@ -363,6 +374,6 @@ def gen_plots_post_hoc(config: Config) -> None:
 
 
 if __name__ == "__main__":
-    config = Config.from_file("data/pseudo_surface/pipeline.config.json")
+    config = Config.from_file("data/ras_upskill/pipeline.config.json")
     pipeline(config)
     # gen_plots_post_hoc(config)

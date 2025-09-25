@@ -20,13 +20,14 @@ from numpy.typing import NDArray
 from pyproj import CRS
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
-from scipy.interpolate import LSQUnivariateSpline
+from scipy.interpolate import LinearNDInterpolator, LSQUnivariateSpline
+from scipy.spatial import Delaunay
 from shapely import Polygon
 from sklearn.decomposition import PCA, IncrementalPCA
 
 from gpras.gpr import GPRAS
 from gpras.ras.model import RasModel
-from gpras.utils.plotting import ts_clipping
+from gpras.utils.plotting import plot_centerline_interpolater, plot_rating_curve, ts_clipping
 from gpras.utils.spatial_utils import ras_hdf_precip_transform
 
 HecDss.set_global_debug_level(0)
@@ -411,6 +412,30 @@ class RasUpskillDataBuilder(DataBuilder):
         return df
 
 
+class RasInterpolaterBuilder(RasUpskillDataBuilder):
+    """Smarter interpolater for LF model than nearest neighbor."""
+
+    def get_lf_plan_data(self, plan: str) -> pd.DataFrame:
+        """Get water surface elevation timeseries from a HEC-RAS model."""
+        dt_index = self.get_lf_unsteady_timeseries_index(plan)
+        asset = self.lf_ras.plan_hdfs[plan]
+        z: NDArray[Any] = asset.mesh_timeseries_output(self.mesh_id, "Water Surface").values
+        z = z[:, self.lf_geometry_aoi["cell_id"]]
+
+        lfc = self.lf_geometry_aoi.geometry.centroid.get_coordinates()  # TODO: Move these to init
+        hfc = self.hf_geometry_aoi.centroid.get_coordinates()
+        hfc_coords = np.column_stack([hfc.x, hfc.y])
+        tri = Delaunay(lfc)
+        vals = np.empty((z.shape[0], hfc_coords.shape[0]))
+        for i in range(z.shape[0]):
+            interp = LinearNDInterpolator(tri, z[i, :])
+            vals[i, :] = interp(hfc_coords)
+
+        mask = (vals < self.cell_elevations) | (np.isnan(vals))
+        vals[mask] = np.repeat(self.cell_elevations[:, np.newaxis], vals.shape[0], axis=1).T[mask]
+        return pd.DataFrame(vals, index=dt_index, columns=self.hf_resampler)
+
+
 class RatingCurve:
     """Stage-discharge rating curve for boundary conditions."""
 
@@ -419,7 +444,7 @@ class RatingCurve:
         q: NDArray[Any],
         wse: NDArray[Any],
         drop_nonpos: bool = True,
-        qmin: float = 0,
+        qmin: float = 10,
         qmax: float = 10e10,
         n_knots: int = 7,
     ) -> None:
@@ -438,9 +463,9 @@ class RatingCurve:
         if drop_nonpos:
             mask &= q > 0
         if qmin is not None:
-            mask &= q >= float(qmin)
+            mask &= q > float(qmin)
         if qmax is not None:
-            mask &= q <= float(qmax)
+            mask &= q < float(qmax)
 
         q = q[mask]
         wse = wse[mask]
@@ -460,7 +485,13 @@ class RatingCurve:
         """Statistics on how good the spline fit is."""
         wse_pred = self.spline(self.q)
         resid = wse_pred - self.wse
-        return {"rmse": np.sqrt(np.mean(resid**2)), "mae": np.mean(resid)}
+        return {"rmse": np.sqrt(np.mean(resid**2)), "mae": np.mean(np.abs(resid))}
+
+    def plot(self, out_path: str | Path, title: str | None = None) -> None:
+        """Make a plot of the fitted curve and source data."""
+        q_rng = np.linspace(self.q.min(), self.q.max(), 1000)
+        wse_fit = self.predict(q_rng)
+        plot_rating_curve(self.q, self.wse, q_rng, wse_fit, out_path, title)
 
     def predict(self, q: NDArray[Any]) -> NDArray[Any]:
         """Predict WSE from discharge."""
@@ -645,6 +676,10 @@ class PseudoSurfaceDataBuilder(DataBuilder):
         intersection_points["distance"] = stations
         cell_dists = intersection_points.groupby("cell_id", as_index=False)["distance"].mean()
         return cast(NDArray[Any], cell_dists.set_index("cell_id").loc[self.centerline_cell_ids, "distance"].values)
+
+    def plot_centerline_interpolater(self, out_path: str) -> None:
+        """Plot median drop over stream centerline by station."""
+        plot_centerline_interpolater(self.cell_stations, self.cl_interpolater, out_path)
 
 
 class HmsUpskillDataBuilder(DataBuilder):

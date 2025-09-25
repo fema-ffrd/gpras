@@ -785,3 +785,39 @@ def map_detection_categories(
         apply_formatting(fig, ax)
         fig.savefig(Path(output_plot_path) / f"detection_{event}.png")
         plt.close(fig)
+
+
+def plot_rating_curve(
+    x_src: NDArray[Any],
+    y_src: NDArray[Any],
+    x_fit: NDArray[Any],
+    y_fit: NDArray[Any],
+    out_path: str | Path,
+    title: str | None = None,
+) -> None:
+    """Plot a fitted stage-discharge rating curve."""
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    ax.scatter(x_src, y_src, s=1, alpha=0.6, c="k", label="observations")
+    ax.plot(x_fit, y_fit, c="b", label="Fitted Rating Curve", alpha=0.8)
+    ax.set_ylabel("Water Surface Elevation (ft)")
+    ax.set_xlabel("Discharge (cfs)")
+    if title:
+        fig.suptitle(title)
+    ax.legend()
+    apply_formatting(fig, ax)
+    fig.savefig(out_path)
+    plt.close(fig)
+
+
+def plot_centerline_interpolater(station: NDArray[Any], wse: NDArray[Any], out_path: str | Path) -> None:
+    """Plot median drop over stream centerline by station."""
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    pct = 100 * wse
+    ax.scatter(station, pct, s=2, alpha=0.6, ec="k", fc="none", label="median")
+    ax.set_xlabel("Distance Along Centerline (ft)")
+    ax.set_ylabel("Percent Drop in Water Surface Elevation")
+    buff = pct.max() * 0.05
+    ax.set_ylim((pct.max() + buff, pct.min() - buff))
+    apply_formatting(fig, ax)
+    fig.savefig(out_path)
+    plt.close(fig)
