@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
+import matplotlib.patheffects as pe
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -300,30 +301,53 @@ def appr_3_pairplot(x: pd.DataFrame, y: pd.DataFrame, out_dir: str | Path) -> No
 
 def ts_clipping(arr: NDArray[Any], cutoffs: tuple[int, int], out_path: str) -> None:
     """Plot changes in WSE/feature value across timesteps and visualize what's clipped out."""
+    # cutoffs = (cutoffs[0] - 1, cutoffs[1])
     arr = arr[:, np.any(arr > 0, axis=0)]
-    dx_dt_max = np.quantile(arr, 0.99, axis=1)
+    # dx_dt_max = np.quantile(arr, 0.99, axis=1)
     dx_dt_ave = np.sum(arr, axis=1) / np.sum(arr)
     cum_dx_dt = np.cumsum(arr, axis=0)
-    cum_dx_dt_max = np.quantile(cum_dx_dt, 0.01, axis=1)
+    # cum_dx_dt_max = np.quantile(cum_dx_dt, 0.01, axis=1)
     cum_dx_dt_ave = np.sum(cum_dx_dt, axis=1) / cum_dx_dt.shape[1]
+    x1 = np.arange(len(arr))
 
-    fig, axs = plt.subplots(nrows=2, figsize=(6.5, 4), sharex=True)
+    # Zoom in
+    rng = cutoffs[1] - cutoffs[0]
+    mult = int(rng / 10)
+    zc1 = cutoffs[0] - mult
+    zc2 = cutoffs[1] + mult
+    x2 = x1[zc1:zc2]
 
-    axs[0].plot(dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
-    axs[0].plot(dx_dt_ave, c="k", label="average")
-    axs[1].plot(cum_dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
-    axs[1].plot(cum_dx_dt_ave, c="k", label="average")
-    axs[0].axvline(cutoffs[0], ls="dashed", c="r")
-    axs[1].axvline(cutoffs[0], ls="dashed", c="r")
-    axs[0].axvline(cutoffs[1], ls="dashed", c="r")
+    fig, axs = plt.subplots(nrows=3, figsize=(6.5, 6.5))
+
+    # axs[0].plot(dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
+    axs[0].plot(x1, dx_dt_ave, c="k")
+    # axs[1].plot(cum_dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
+    axs[1].plot(x2, dx_dt_ave[zc1:zc2], c="k")
+    axs[2].plot(x2, cum_dx_dt_ave[zc1:zc2], c="k")
+    axs[1].axvline(cutoffs[0], ls="dashed", c="r", label="cutoffs")
+    axs[2].axvline(cutoffs[0], ls="dashed", c="r")
     axs[1].axvline(cutoffs[1], ls="dashed", c="r")
+    axs[2].axvline(cutoffs[1], ls="dashed", c="r")
 
-    axs[1].set_xlabel("Timestep Index")
+    axs[2].set_xlabel("Timestep Index")
     axs[0].set_ylabel("dx/dt")
-    axs[1].set_ylabel("CDF of dx/dt")
+    axs[1].set_ylabel("dx/dt")
+    axs[2].set_ylabel("CDF of dx/dt")
+
+    for ax, title in zip(axs, ["Full Simulation", "Zoomed In", "Zoomed In"], strict=False):
+        ax.text(
+            0.95,
+            0.15,
+            title,
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            path_effects=[pe.withStroke(linewidth=5, foreground="white")],
+            size=11,
+        )
     fig.suptitle("Changes in Cell/Feature Values")
 
-    axs[1].legend()
+    fig.legend(loc="upper right")
     apply_formatting(fig, axs)
     fig.savefig(out_path)
     plt.close(fig)
