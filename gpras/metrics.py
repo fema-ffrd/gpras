@@ -11,10 +11,12 @@ from numpy.typing import NDArray
 def export_metric_summary(
     x_all: pd.DataFrame,
     y_all: pd.DataFrame,
+    conf_all: pd.DataFrame,
     out_path: str | Path,
     depth_threshold: float = 0.5,
     t_tol: int = 0,
     v_tol: float = 0,
+    hydraulic_parameter: str = "depth"
 ) -> None:
     """Export all metrics to a sqlite database."""
     # Initialize lists for per-event dataframes.
@@ -26,6 +28,7 @@ def export_metric_summary(
         # Subset to event
         x = x_all.loc[event].values
         y = y_all.loc[event].values
+        conf = conf_all.loc[event].values
         tsteps = x_all.loc[event].index.values
 
         # Cache maximum timestep for efficiency
@@ -36,14 +39,16 @@ def export_metric_summary(
         scalar_dict = {
             "event": event,
             "rmse_aoi_toi": [rmse_aoi_toi(x, y)],
+            "mae_aoi_toi": [mae_aoi_toi(x, y)],
+            "conf_aoi_toi": [conf_aoi_toi(conf)],
             "rmse_aoi_mts": [rmse_aoi_mts(x, y, x_mts, y_mts)],
             "nse_aoi_mts": [nse_aoi_mts(x, y, x_mts, y_mts)],
             "err_aoi_toi": [err_aoi_toi(x, y)],
             "err_aoi_mts": [err_aoi_mts(x, y, x_mts, y_mts)],
             "fi_aoi_toi": [fi_aoi_toi(x, y, t_tol, v_tol)],
-            "pod_mts": [pod_mts(x, y, depth_threshold, x_mts, y_mts)],
-            "rfa_mts": [rfa_mts(x, y, depth_threshold, x_mts, y_mts)],
-            "csi_mts": [csi_mts(x, y, depth_threshold, x_mts, y_mts)],
+            "pod_mts": [pod_mts(x, y, depth_threshold, x_mts, y_mts)] if hydraulic_parameter != "velocity" else [np.nan],
+            "rfa_mts": [rfa_mts(x, y, depth_threshold, x_mts, y_mts)] if hydraulic_parameter != "velocity" else [np.nan],
+            "csi_mts": [csi_mts(x, y, depth_threshold, x_mts, y_mts)] if hydraulic_parameter != "velocity" else [np.nan],
             "f2_mts": [f2_mts(x, y, x_mts, y_mts)],
             "f3_mts": [f3_mts(x, y, x_mts, y_mts)],
         }
@@ -55,6 +60,7 @@ def export_metric_summary(
             "timestep": tsteps,
             "rmse_aoi_ts": rmse_aoi_ts(x, y),
             "err_aoi_ts": err_aoi_ts(x, y),
+            "conf_aoi_ts": conf_aoi_ts(conf),
         }
         all_timeseries.append(pd.DataFrame.from_dict(timeseries_dict))
 
@@ -65,6 +71,7 @@ def export_metric_summary(
             "rmse_cell_toi": rmse_cell_toi(x, y),
             "err_cell_mts": err_cell_mts(x, y, x_mts, y_mts),
             "err_cell_toi": err_cell_toi(x, y),
+            "conf_cell_toi": conf_cell_toi(conf),
         }
         all_cells.append(pd.DataFrame.from_dict(cell_dict))
 
@@ -78,6 +85,16 @@ def export_metric_summary(
 def rmse_aoi_toi(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     """Calculate the root-mean-squared-error across all cells and timesteps."""
     return float((((x - y) ** 2).mean()) ** 0.5)
+
+
+def mae_aoi_toi(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
+    """Calculate the mean absolute error across all cells and timesteps."""
+    return float(np.abs(x - y).mean())
+
+
+def conf_aoi_toi(x: NDArray[np.float64]) -> float:
+    """Calculate the mean confidence across all cells and timesteps."""
+    return float(x.mean())
 
 
 def rmse_aoi_ts(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -159,9 +176,19 @@ def err_aoi_ts(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.flo
     return np.asarray((x - y).mean(axis=1), dtype=np.float64)
 
 
+def conf_aoi_ts(x: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Calculate the mean confidence across all cells at each timestep."""
+    return np.asarray(x.mean(axis=1), dtype=np.float64)
+
+
 def err_cell_toi(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Calculate the mean difference across all timesteps for each cell."""
+    """Calculate the mean confidence across all timesteps for each cell."""
     return np.asarray((x - y).mean(axis=0), dtype=np.float64)
+
+
+def conf_cell_toi(x: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Calculate the mean difference across all timesteps for each cell."""
+    return np.asarray(x.mean(axis=0), dtype=np.float64)
 
 
 def fi_aoi_toi(x: NDArray[np.float64], y: NDArray[np.float64], t_tol: int, v_tol: float) -> float:

@@ -17,6 +17,7 @@ from gpras.preprocess import (
     HydraulicParameterType,
     PreProcessor,
     PseudoSurfaceDataBuilder,
+    RasInterpolaterBuilder,
     RasReader,
     RasUpskillDataBuilder,
 )
@@ -157,6 +158,8 @@ class Config:
             return PseudoSurfaceDataBuilder
         elif self.lf_model_type == "hms_upskill":
             return HmsUpskillDataBuilder
+        elif self.lf_model_type == "ras_interpolate":
+            return RasInterpolaterBuilder
 
     @cached_property
     def data_reader(self) -> type[RasReader]:
@@ -166,6 +169,7 @@ class Config:
         elif self.lf_model_type == "pseudo_surface" or self.lf_model_type == "hms_upskill":
             return RasReader  # TODO: Implement this
         else:
+            return RasReader
             raise RuntimeError(f"No data reader available for LF model type '{self.lf_model_type}'")
 
     @cached_property
