@@ -349,6 +349,7 @@ class RasUpskillDataBuilder(DataBuilder):
             flow_convergence_threshold=flow_convergence_threshold,
             cutoffs=cutoffs,
             hf_resampler=hf_resampler,
+            hydraulic_parameter=hydraulic_parameter,
         )
         if hf_resampler is None or lf_resampler is None:
             self.set_spatial_resamplers()
@@ -710,10 +711,19 @@ class HmsUpskillDataBuilder(DataBuilder):
         flow_convergence_threshold: float = 0.95,
         cutoffs: dict[str, tuple[int, int]] | None = None,
         hf_resampler: NDArray[Any] | None = None,
+        hydraulic_parameter: HydraulicParameterType = "wse",
     ):
         """Construct class."""
         super().__init__(
-            hf_ras, mesh_id, plans, area_of_interest, cell_id_field, flow_convergence_threshold, cutoffs, hf_resampler
+            hf_ras,
+            mesh_id,
+            plans,
+            area_of_interest,
+            cell_id_field,
+            flow_convergence_threshold,
+            cutoffs,
+            hf_resampler,
+            hydraulic_parameter,
         )
 
         self.inflow_dss_dir = inflow_dss_dir
@@ -1011,6 +1021,7 @@ class PreProcessor:
             x = self.wse_2_depth(x)
         if self.hydraulic_parameter != "velocity":
             x = x[:, ~self.dry_indices].copy()
+            # TODO: velocity appears to be skewed. Investigate log transform
 
         # Apply first round of scaling
         x = x - self.input_mean

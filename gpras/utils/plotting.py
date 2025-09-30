@@ -152,7 +152,12 @@ def ec_timeseries(
 
 
 def performance_scatterplot(
-    lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path, depth: bool = False, hydraulic_parameters: str = "wse"
+    lf: NDArray[Any],
+    hf: NDArray[Any],
+    lf_upskill: NDArray[Any],
+    out_path: str | Path,
+    depth: bool = False,
+    hydraulic_parameters: str = "wse",
 ) -> None:
     """Plot scatterplots comparing low-fidelity vs high-fidelity and upskilled vs high-fidelity models depth estimates.
 
@@ -192,7 +197,13 @@ def performance_scatterplot(
     plt.close(fig)
 
 
-def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path, hydraulic_parameters: str = "wse"   ) -> None:
+def performance_cdf(
+    lf: NDArray[Any],
+    hf: NDArray[Any],
+    lf_upskill: NDArray[Any],
+    out_path: str | Path,
+    hydraulic_parameters: str = "wse",
+) -> None:
     """Plot cumulative distribution of absolute error for low-fidelity and upskilled models.
 
     Args:
@@ -551,7 +562,7 @@ def summary_plots(
                         y_values = np.ma.filled(y_values, fill_value=np.nan)
 
                     # Convert to numeric and handle non-numeric values
-                    y_values = pd.to_numeric(y_values, errors='coerce')  # Convert non-numeric to NaN
+                    y_values = pd.to_numeric(y_values, errors="coerce")  # Convert non-numeric to NaN
 
                     # Create a mask for valid values
                     valid_mask = np.isfinite(y_values)  # Removes NaN, -inf, and inf values
@@ -568,11 +579,9 @@ def summary_plots(
                         continue
                 else:
                     # Ensure no masked, NaN, or infinite values are passed to boxplot
+                    boxplot_data = [df[df["event"] == event][metrics_field] for event in events]
                     boxplot_data = [
-                        df[df["event"] == event][metrics_field] for event in events
-                    ]
-                    boxplot_data = [
-                        pd.to_numeric(data, errors='coerce') if isinstance(data, pd.Series) else data
+                        pd.to_numeric(data, errors="coerce") if isinstance(data, pd.Series) else data
                         for data in boxplot_data
                     ]
                     boxplot_data = [data[np.isfinite(data)] for data in boxplot_data]  # Remove -inf and inf values

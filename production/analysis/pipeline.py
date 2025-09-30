@@ -263,15 +263,20 @@ def pipeline(config: Config) -> None:
     _ = y_test_pred + (norm.ppf(0.975) * np.sqrt(y_test_var))  # High est
     _ = y_test_pred + (norm.ppf(0.025) * np.sqrt(y_test_var))  # Low est
 
-    if config.hydraulic_parameter == "depth":
-        y_test_pred += hf_reducer.elevations
-    lf_test_data_depth = (
-        hf_reducer.wse_2_depth(lf_test_data)
-        if config.lf_model_type in ["ras_upskill", "pseudo_surface", "ras_interpolate"]
-        else lf_test_data
-    )
-    hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
-    y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
+    if config.hydraulic_parameter != "velocity":
+        if config.hydraulic_parameter == "depth":
+            y_test_pred += hf_reducer.elevations
+        lf_test_data_depth = (
+            hf_reducer.wse_2_depth(lf_test_data)
+            if config.lf_model_type in ["ras_upskill", "pseudo_surface", "ras_interpolate"]
+            else lf_test_data
+        )
+        hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
+        y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
+    else:
+        hf_test_data_depth = hf_test_data
+        y_test_pred_depth = y_test_pred
+        lf_test_data_depth = lf_test_data
 
     ### Assess performance and plot diagnostics ###
     t5 = time.perf_counter()
@@ -289,6 +294,10 @@ def pipeline(config: Config) -> None:
             indent=4,
         )
     if config.generate_plots:
+        if config.hydraulic_parameter == "velocity":
+            wet_cell_ids = extracter.hf_geometry_aoi[config.cell_id_field].tolist()
+        else:
+            wet_cell_ids = extracter.hf_geometry_aoi[config.cell_id_field][~hf_reducer.dry_indices].tolist()
         gen_plots(
             config,
             gpr,
@@ -306,7 +315,7 @@ def pipeline(config: Config) -> None:
             hf_test_data_depth,
             y_test_pred_depth,
             hf_reducer.eofs,
-            extracter.hf_geometry_aoi[config.cell_id_field][~hf_reducer.dry_indices].tolist(),
+            wet_cell_ids,
         )
 
 
