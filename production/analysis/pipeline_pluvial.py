@@ -1,4 +1,4 @@
-"""Example script for running a GPR model training workflow. Pluvial area only."""
+"""Example script for running a GPR model training workflow."""
 
 import inspect
 import json
@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
@@ -13,6 +14,7 @@ from gpras.gpr import GPRAS
 from gpras.metrics import export_metric_summary
 from gpras.preprocess import (
     DataBuilder,
+    HmsPreProcessor,
     PreProcessor,
     RasReader,
 )
@@ -45,18 +47,45 @@ def get_data_extracter(
     return config.data_reader(db_path)
 
 
-def get_pre_processor(
-    config: Config, hf_data: NDArray[Any], extracter: DataBuilder | RasReader, save: bool
+def get_hf_pre_processor(
+    config: Config, data: pd.DataFrame, extracter: DataBuilder | RasReader, save: bool
 ) -> PreProcessor:
-    """Get a preprocessor for the config and create one if necessary."""
-    if not (config.preprocessor_path).exists():
+    """Get a HEC-RAS preprocessor for the config and create one if necessary."""
+    if not (config.hf_preprocessor_path).exists():
         reducer = PreProcessor(wet_threshold=config.wet_threshold_depth, hydraulic_parameter=config.hydraulic_parameter)
-        reducer.fit(hf_data, extracter.cell_elevations, extracter.cell_areas, config.spatial_mode_count)
+        reducer.fit(data.values, extracter.cell_elevations, extracter.cell_areas, config.spatial_mode_count)
         if save:
-            reducer.to_file(config.preprocessor_path)
+            reducer.to_file(config.hf_preprocessor_path)
     else:
-        reducer = PreProcessor.from_file(config.preprocessor_path)
+        reducer = PreProcessor.from_file(config.hf_preprocessor_path)
     return reducer
+
+
+def get_hms_preprocessor(config: Config, data: pd.DataFrame, save: bool) -> HmsPreProcessor:
+    """Get a HEC-HMS preprocessor for the config and create one if necessary."""
+    if not (config.lf_preprocessor_path).exists():
+        reducer = HmsPreProcessor()
+        precip_mask = np.array([i.startswith("precip_") for i in data.columns])
+        bc_mask = ~precip_mask
+        reducer.fit(data.values, bc_mask, precip_mask, config.precip_spatial_mode_count)
+        if save:
+            reducer.to_file(config.lf_preprocessor_path)
+    else:
+        reducer = HmsPreProcessor.from_file(config.lf_preprocessor_path)
+    return reducer
+
+
+def get_pre_processors(
+    config: Config, hf_data: pd.DataFrame, lf_data: pd.DataFrame, extracter: DataBuilder | RasReader, save: bool
+) -> tuple[PreProcessor, PreProcessor | HmsPreProcessor]:
+    """Get lf and hf data preprocessors."""
+    hf_preprocessor = get_hf_pre_processor(config, hf_data, extracter, save)
+    if config.lf_model_type in ["ras_upskill", "pseudo_surface"]:
+        return hf_preprocessor, hf_preprocessor
+    elif config.lf_model_type == "hms_upskill":
+        return hf_preprocessor, get_hms_preprocessor(config, lf_data, save)
+    else:
+        raise RuntimeError(f"No preprocessor setup available for LF model type: {config.lf_model_type}")
 
 
 def gen_plots(
@@ -89,6 +118,7 @@ def gen_plots(
     ec_pairplot(x_test, y_test, min(config.spatial_mode_count, 5), config.plot_dir / "pairplot_test.png")
     ec_pairplot(x, y, min(config.spatial_mode_count, 5), config.plot_dir / "pairplot.png")
     # ec_timeseries(x, y, min(config.spatial_mode_count, 5), hf_data_df.index, config.plot_dir / "ec_timeseries")
+    # ec_timeseries_alt(x, y, 5, hf_data_df.index, ["u/s bc", "p1", "p2", "p3", "p4", "p5", "api1", "api2"], config.plot_dir / "ec_timeseries")
     performance_scatterplot(
         lf_test_data_df.values,
         hf_test_data_df.values,
@@ -125,6 +155,15 @@ def gen_plots(
     #     suffix="mts_error",
     #     error_field="err_cell_mts",
     #     error_metric="Max Depth Error",
+    # )
+
+    # map_mesh_errors(
+    #     hf_mesh,
+    #     config.metric_dir / "performance_metrics_lf.db",
+    #     config.plot_dir / "error_maps",
+    #     suffix="mts_error_lf",
+    #     error_field="err_cell_mts",
+    #     error_metric="Max Depth Error LF Baseline",
     # )
 
     # map_mesh_errors(
@@ -200,11 +239,11 @@ def pipeline(config: Config) -> None:
     ### Preprocess data ###
     t2 = time.perf_counter()
     print("Preprocessing data")
-    reducer = get_pre_processor(config, hf_data, extracter, config.save_preprocessor)
-    y = reducer.transform(hf_data)
-    x = reducer.transform(lf_data)
-    x_test = reducer.transform(lf_test_data)
-    y_test = reducer.transform(hf_test_data)
+    hf_reducer, lf_reducer = get_pre_processors(config, hf_data_df, lf_data_df, extracter, config.save_preprocessor)
+    y = hf_reducer.transform(hf_data)
+    x = lf_reducer.transform(lf_data)
+    y_test = hf_reducer.transform(hf_test_data)
+    x_test = lf_reducer.transform(lf_test_data)
 
     # ### Fit GPR ### DCW: delete per Scott's guidance in CHAT in GPR Weekly Check-in channel sent 9/19
     # t3 = time.perf_counter()
@@ -217,19 +256,28 @@ def pipeline(config: Config) -> None:
 
     ### Load GPR ### DCW: added per Scott's guidance in CHAT in GPR Weekly Check-in channel sent 9/19
     t3 = time.perf_counter()
-    print("Loading GPR")
+    print("Fitting GPR")
     gpr = GPRAS.from_file(config.model_path)
+    # gpr = GPRAS(config.kernel)
+    # gpr.fit(
+    #     x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
+    # )
+    # gpr.to_file(config.model_path)
 
     ### Predict test data ###
     t4 = time.perf_counter()
     print("Making predictions")
     mean_pred, _ = gpr.predict(x_test)
-    y_test_pred = reducer.reverse_transform(mean_pred)
+    y_test_pred = hf_reducer.reverse_transform(mean_pred)
     if config.hydraulic_parameter == "depth":
-        y_test_pred += reducer.elevations
-    lf_test_data_depth = reducer.wse_2_depth(lf_test_data)
-    hf_test_data_depth = reducer.wse_2_depth(hf_test_data)
-    y_test_pred_depth = reducer.wse_2_depth(y_test_pred)
+        y_test_pred += hf_reducer.elevations
+    lf_test_data_depth = (
+        hf_reducer.wse_2_depth(lf_test_data)
+        if config.lf_model_type in ["ras_upskill", "pseudo_surface"]
+        else lf_test_data
+    )
+    hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
+    y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
 
     ### Load data needed to mask pluvial data ***
     print("Loading pluvial mask")
@@ -264,9 +312,20 @@ def pipeline(config: Config) -> None:
         pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         config.metric_db_path,
+        depth_threshold=config.wet_threshold_depth,
         v_tol=1.0,
         t_tol=1,  # added by DCW
     )
+
+    export_metric_summary(
+        pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        "data/ras_upskill/metrics/performance_metrics_lf.db",
+        depth_threshold=config.wet_threshold_depth,
+        v_tol=1.0,  # ft
+        t_tol=1,  # added by DCW
+    )
+
     # pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
     #     "production/post_processing/data/df_lf_test_data_depth.csv"
     # )  # added by DCW
@@ -300,8 +359,8 @@ def pipeline(config: Config) -> None:
             lf_test_data_depth,
             hf_test_data_depth,
             y_test_pred_depth,
-            reducer.eofs,
-            extracter.hf_geometry_aoi[config.cell_id_field][~reducer.dry_indices].tolist(),
+            hf_reducer.eofs,
+            extracter.hf_geometry_aoi[config.cell_id_field][~hf_reducer.dry_indices].tolist(),
         )
 
 
@@ -325,11 +384,11 @@ def gen_plots_post_hoc(config: Config) -> None:
 
     ### Preprocess data ###
     print("Preprocessing data")
-    reducer = get_pre_processor(config, hf_data, extracter, config.save_preprocessor)
-    y = reducer.transform(hf_data)
-    x = reducer.transform(lf_data)
-    x_test = reducer.transform(lf_test_data)
-    y_test = reducer.transform(hf_test_data)
+    hf_reducer, lf_reducer = get_pre_processors(config, hf_data_df, lf_data_df, extracter, config.save_preprocessor)
+    y = hf_reducer.transform(hf_data)
+    x = lf_reducer.transform(lf_data)
+    y_test = hf_reducer.transform(hf_test_data)
+    x_test = lf_reducer.transform(lf_test_data)
 
     ### Load GPR ###
     print("Loading GPR")
@@ -338,12 +397,12 @@ def gen_plots_post_hoc(config: Config) -> None:
     ### Predict test data ###
     print("Making predictions")
     mean_pred, _ = gpr.predict(x_test)
-    y_test_pred = reducer.reverse_transform(mean_pred)
+    y_test_pred = hf_reducer.reverse_transform(mean_pred)
     if config.hydraulic_parameter == "depth":
-        y_test_pred += reducer.elevations
-    lf_test_data_depth = reducer.wse_2_depth(lf_test_data)
-    hf_test_data_depth = reducer.wse_2_depth(hf_test_data)
-    y_test_pred_depth = reducer.wse_2_depth(y_test_pred)
+        y_test_pred += hf_reducer.elevations
+    lf_test_data_depth = hf_reducer.wse_2_depth(lf_test_data) if config.lf_model_type == "ras_upskill" else lf_test_data
+    hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
+    y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
 
     ### Assess performance and plot diagnostics ###
     print("Making performance plots")
@@ -363,8 +422,8 @@ def gen_plots_post_hoc(config: Config) -> None:
         lf_test_data_depth,
         hf_test_data_depth,
         y_test_pred_depth,
-        reducer.eofs,
-        extracter.hf_geometry_aoi[config.cell_id_field][~reducer.dry_indices].tolist(),
+        hf_reducer.eofs,
+        extracter.hf_geometry_aoi[config.cell_id_field][~hf_reducer.dry_indices].tolist(),
     )
 
 

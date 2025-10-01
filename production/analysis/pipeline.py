@@ -9,6 +9,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from scipy.stats import norm
 
 from gpras.gpr import GPRAS
 from gpras.metrics import export_metric_summary
@@ -259,18 +260,22 @@ def pipeline(config: Config) -> None:
     ### Load GPR ### DCW: added per Scott's guidance in CHAT in GPR Weekly Check-in channel sent 9/19
     t3 = time.perf_counter()
     print("Fitting GPR")
-    # gpr = GPRAS.from_file(config.model_path)
-    gpr = GPRAS(config.kernel)
-    gpr.fit(
-        x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
-    )
-    gpr.to_file(config.model_path)
+    gpr = GPRAS.from_file(config.model_path)
+    # gpr = GPRAS(config.kernel)
+    # gpr.fit(
+    #     x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
+    # )
+    # gpr.to_file(config.model_path)
 
     ### Predict test data ###
     t4 = time.perf_counter()
     print("Making predictions")
-    mean_pred, _ = gpr.predict(x_test)
-    y_test_pred = hf_reducer.reverse_transform(mean_pred)
+    # mean_pred, _ = gpr.predict(x_test)
+    # y_test_pred = hf_reducer.reverse_transform(mean_pred)
+    mean_pred, var_pred = gpr.predict(x_test)
+    y_test_pred, y_test_var = hf_reducer.reverse_transform(mean_pred, var_pred)
+    y_high = y_test_pred + (norm.ppf(0.975) * np.sqrt(y_test_var))
+    y_low = y_test_pred + (norm.ppf(0.025) * np.sqrt(y_test_var))
     if config.hydraulic_parameter == "depth":
         y_test_pred += hf_reducer.elevations
     lf_test_data_depth = (
@@ -280,6 +285,8 @@ def pipeline(config: Config) -> None:
     )
     hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
     y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
+    y_high_test_pred_depth = hf_reducer.wse_2_depth(y_high)
+    y_low_test_pred_depth = hf_reducer.wse_2_depth(y_low)
 
     ### Assess performance and plot diagnostics ###
     t5 = time.perf_counter()
@@ -288,6 +295,7 @@ def pipeline(config: Config) -> None:
         pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         config.metric_db_path,
+        depth_threshold=config.wet_threshold_depth,
         v_tol=1.0,
         t_tol=1,  # added by DCW
     )
@@ -296,6 +304,16 @@ def pipeline(config: Config) -> None:
         pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         pd.DataFrame(lf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         "data/ras_upskill/metrics/performance_metrics_lf.db",
+        depth_threshold=config.wet_threshold_depth,
+        v_tol=1.0,  # ft
+        t_tol=1,  # added by DCW
+    )
+
+    export_metric_summary(
+        pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        pd.DataFrame(y_high_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        "data/ras_upskill/metrics/performance_metrics_high.db",
+        depth_threshold=config.wet_threshold_depth,
         v_tol=1.0,
         t_tol=1,  # added by DCW
     )
@@ -308,6 +326,12 @@ def pipeline(config: Config) -> None:
     )  # added by DCW
     pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
         "production/post_processing/data/y_test_pred_depth.csv"
+    )  # added by DCW
+    pd.DataFrame(y_high_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+        "production/post_processing/data/y_high_test_pred_depth.csv"
+    )  # added by DCW
+    pd.DataFrame(y_low_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns).to_csv(
+        "production/post_processing/data/y_low_test_pred_depth.csv"
     )  # added by DCW
 
     with open(config.timer_path, mode="w") as f:
@@ -402,6 +426,6 @@ def gen_plots_post_hoc(config: Config) -> None:
 
 
 if __name__ == "__main__":
-    config = Config.from_file("data/pseudo_surface/pipeline.config.json")
+    config = Config.from_file("data/ras_upskill/pipeline.config.json")
     pipeline(config)
     # gen_plots_post_hoc(config)
