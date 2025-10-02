@@ -7,7 +7,7 @@
 ![Linter: Ruff](https://img.shields.io/badge/linter-ruff-orange)
 
 <div align="center">
-    <img src="./images/gpras_logo.svg" alt="gpras Logo" width="250"/>
+    <img src="./images/logo.png" alt="gpras Logo" width="250"/>
 </div>
 
 ## Overview
