@@ -19,7 +19,8 @@ dependencies = [
   "hecstac",
   "scikit-learn",
   "chardet",
-  "seaborn"
+  "seaborn",
+  "numpy>=1.26.4",
 ]
 
 [project.optional-dependencies]
