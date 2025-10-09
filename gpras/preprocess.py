@@ -70,6 +70,7 @@ class DataBuilder:
         flow_convergence_threshold: float = 0.95,
         cutoffs: dict[str, tuple[int, int]] | None = None,
         hf_resampler: NDArray[Any] | None = None,
+        hydraulic_parameter: HydraulicParameterType = "wse",
     ):
         """Construct class."""
         self.hf_ras = hf_ras
@@ -79,6 +80,7 @@ class DataBuilder:
         self.cell_id_field = cell_id_field
         self.flow_convergence_threshold = flow_convergence_threshold
         self.hf_resampler = hf_resampler
+        self.hydraulic_parameter = hydraulic_parameter
         self.set_spatial_resamplers()  # Does not overwrite
         self.cutoffs = cutoffs or {}
         self._hf_aligned: pd.DataFrame | None = None
@@ -158,11 +160,11 @@ class DataBuilder:
         dx_dt = self._delta_cols_norm(arr)
         ts_clipping(dx_dt, cutoffs, out_path)
 
-    def get_hf_plan_data(self, plan: str, hydraulic_parameter: str) -> pd.DataFrame:
+    def get_hf_plan_data(self, plan: str) -> pd.DataFrame:
         """Get HF water surface elevation timeseries within an AOI from a HEC-RAS model."""
         dt_index = self.get_unsteady_timeseries_index(plan)
         asset = self.hf_ras.plan_hdfs[plan]
-        if hydraulic_parameter == "velocity":
+        if self.hydraulic_parameter == "velocity":
             vel_x = asset.mesh_timeseries_output(self.mesh_id, "Cell Velocity - Velocity X").values
             vel_y = asset.mesh_timeseries_output(self.mesh_id, "Cell Velocity - Velocity Y").values
             vals: NDArray[Any] = np.sqrt(vel_x**2 + vel_y**2)
@@ -171,7 +173,7 @@ class DataBuilder:
         vals = vals[:, self.hf_resampler]
         return pd.DataFrame(vals, index=dt_index, columns=self.hf_resampler)
 
-    def get_lf_plan_data(self, _: str, __: str) -> pd.DataFrame:
+    def get_lf_plan_data(self, _: str) -> pd.DataFrame:
         """Placeholder for subclass methods."""
         raise RuntimeError("Tried to call get_lf_plan_data() on DataBuilder. Use a subclass instead.")
 
@@ -337,6 +339,7 @@ class RasUpskillDataBuilder(DataBuilder):
         cutoffs: dict[str, tuple[int, int]] | None = None,
         hf_resampler: NDArray[Any] | None = None,
         lf_resampler: NDArray[Any] | None = None,
+        hydraulic_parameter: HydraulicParameterType = "wse",
     ):
         """Construct class."""
         self.lf_ras = lf_ras
@@ -357,18 +360,18 @@ class RasUpskillDataBuilder(DataBuilder):
             self.hf_resampler = hf_resampler
             self.lf_resampler = lf_resampler
 
-    def get_lf_plan_data(self, plan: str, hydraulic_parameter: str) -> pd.DataFrame:
+    def get_lf_plan_data(self, plan: str) -> pd.DataFrame:
         """Get water surface elevation timeseries from a HEC-RAS model."""
         dt_index = self.get_lf_unsteady_timeseries_index(plan)
         asset = self.lf_ras.plan_hdfs[plan]
-        if hydraulic_parameter == "velocity":
+        if self.hydraulic_parameter == "velocity":
             vel_x = asset.mesh_timeseries_output(self.mesh_id, "Cell Velocity - Velocity X").values
             vel_y = asset.mesh_timeseries_output(self.mesh_id, "Cell Velocity - Velocity Y").values
             vals: NDArray[Any] = np.sqrt(vel_x**2 + vel_y**2)
         else:
             vals = asset.mesh_timeseries_output(self.mesh_id, "Water Surface").values
         vals = vals[:, self.lf_resampler]
-        if hydraulic_parameter != "velocity":
+        if self.hydraulic_parameter != "velocity":
             mask = vals < self.cell_elevations
             vals[mask] = np.repeat(self.cell_elevations[:, np.newaxis], vals.shape[0], axis=1).T[mask]
         return pd.DataFrame(vals, index=dt_index, columns=self.hf_resampler)
@@ -969,8 +972,9 @@ class PreProcessor:
             self.wetness_classes = self.classify_wetness_depth(x)
         elif self.hydraulic_parameter == "wse":
             self.wetness_classes = self.classify_wetness_wse(x, elevations)
-        if self.hydraulic_parameter != "velocity":
-            x = x[:, ~self.dry_indices]
+        elif self.hydraulic_parameter == "velocity":
+            self.wetness_classes = np.repeat("TF", x.shape[1])
+        x = x[:, ~self.dry_indices]
 
         # Apply first round of scaling
         self.input_mean = x.mean(axis=0)
@@ -978,10 +982,7 @@ class PreProcessor:
 
         # Weight by cell area (or other)
         if weights is not None:
-            if self.hydraulic_parameter != "velocity":
-                self.weights = weights[~self.dry_indices]
-            else:
-                self.weights = weights
+            self.weights = weights[~self.dry_indices]
             x *= self.weights
 
         # Fit PCA
@@ -1019,9 +1020,8 @@ class PreProcessor:
         # Filter cells that are always dry or always wet
         if self.hydraulic_parameter == "depth":
             x = self.wse_2_depth(x)
-        if self.hydraulic_parameter != "velocity":
-            x = x[:, ~self.dry_indices].copy()
-            # TODO: velocity appears to be skewed. Investigate log transform
+        x = x[:, ~self.dry_indices].copy()
+        # TODO: velocity appears to be skewed. Investigate log transform
 
         # Apply first round of scaling
         x = x - self.input_mean
