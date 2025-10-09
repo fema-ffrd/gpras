@@ -3,7 +3,7 @@
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import geopandas as gpd
 import matplotlib.patheffects as pe
@@ -583,7 +583,7 @@ def summary_plots(
                     # Ensure no masked, NaN, or infinite values are passed to scatter plot
                     y_values = df.sort_values(by="event")[metrics_field]
                     if isinstance(y_values, np.ma.MaskedArray):
-                        y_values = np.ma.filled(y_values, fill_value=np.nan)
+                        y_values = cast(np.ndarray, np.ma.filled(y_values, fill_value=np.nan))
 
                     # Convert to numeric and handle non-numeric values
                     y_values = pd.to_numeric(y_values, errors="coerce")  # Convert non-numeric to NaN

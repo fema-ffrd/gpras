@@ -30,7 +30,7 @@ def setup(config_path: str) -> None:
     extracter = get_data_extracter(config, config.train_plans, config.training_data_db, True, True)
     get_data_extracter(config, config.test_plans, config.testing_data_db, True, True)
     hf_data_df, lf_data_df = extracter.aligned_datasets
-    get_pre_processors(config, hf_data_df, lf_data_df, extracter, True)
+    get_pre_processors(config, hf_data_df, lf_data_df, extracter)
 
 
 def run_cv(config: CVConfig, parameter: str, options: list[Any]) -> None:
