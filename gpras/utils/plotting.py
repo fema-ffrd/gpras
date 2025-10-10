@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
+import matplotlib.patheffects as pe
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -152,7 +153,12 @@ def ec_timeseries(
 
 
 def performance_scatterplot(
-    lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path, depth: bool = False
+    lf: NDArray[Any],
+    hf: NDArray[Any],
+    lf_upskill: NDArray[Any],
+    out_path: str | Path,
+    depth: bool = False,
+    hydraulic_parameters: str = "wse",
 ) -> None:
     """Plot scatterplots comparing low-fidelity vs high-fidelity and upskilled vs high-fidelity models depth estimates.
 
@@ -162,6 +168,7 @@ def performance_scatterplot(
         lf_upskill (NDArray[Any]): Output of the upskilled low-fidelity model.
         out_path (str): Location to save the plot.
         depth (bool): Whether the data is depth (true) or WSE (false)
+        hydraulic_parameters (str): The hydraulic parameters to use for the plot.
 
     Returns:
         None
@@ -169,28 +176,35 @@ def performance_scatterplot(
     lf, hf, lf_upskill = lf.flatten(), hf.flatten(), lf_upskill.flatten()
 
     fig, axs = plt.subplots(ncols=2, figsize=(6.5, 4), sharey=True)
-    metric = "Depth" if depth else "WSE"
+    metric = "Velocity" if hydraulic_parameters == "velocity" else "Depth" if depth else "WSE"
+    unit = "ft/s" if hydraulic_parameters == "velocity" else "ft"
 
     axs[0].scatter(lf, hf, s=1, c=COMMON_COLORS[0], alpha=0.8)
     ll, ur = min([lf.min(), hf.min()]), max([lf.max(), hf.max()])
     axs[0].plot((ll, ur), (ll, ur), ls="dashed", c="k")
     rmse = np.mean((lf - hf) ** 2) ** 0.5
     axs[0].text(0.95, 0.05, f"rmse: {round(rmse, 2)}", ha="right", va="bottom", transform=axs[0].transAxes)
-    axs[0].set_ylabel(f"High-fidelity Model {metric} (ft)")
-    axs[0].set_xlabel(f"Low-fidelity Model {metric} (ft)")
+    axs[0].set_ylabel(f"High-fidelity Model {metric} ({unit})")
+    axs[0].set_xlabel(f"Low-fidelity Model {metric} ({unit})")
 
     axs[1].scatter(lf_upskill, hf, s=1, c=COMMON_COLORS[0], alpha=0.8)
     ll, ur = min([lf_upskill.min(), hf.min()]), max([lf_upskill.max(), hf.max()])
     axs[1].plot((ll, ur), (ll, ur), ls="dashed", c="k")
     rmse = np.mean((lf_upskill - hf) ** 2) ** 0.5
     axs[1].text(0.95, 0.05, f"rmse: {round(rmse, 2)}", ha="right", va="bottom", transform=axs[1].transAxes)
-    axs[1].set_xlabel(f"Upskilled Model {metric} (ft)")
+    axs[1].set_xlabel(f"Upskilled Model {metric} ({unit})")
     apply_formatting(fig, axs)
     fig.savefig(Path(out_path))
     plt.close(fig)
 
 
-def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any], out_path: str | Path) -> None:
+def performance_cdf(
+    lf: NDArray[Any],
+    hf: NDArray[Any],
+    lf_upskill: NDArray[Any],
+    out_path: str | Path,
+    hydraulic_parameters: str = "wse",
+) -> None:
     """Plot cumulative distribution of absolute error for low-fidelity and upskilled models.
 
     Args:
@@ -198,10 +212,12 @@ def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any]
         hf (NDArray[Any]): High-fidelity model output.
         lf_upskill (NDArray[Any]): Output of the upskilled low-fidelity model.
         out_path (str): Location to save the plot.
+        hydraulic_parameters (str): The hydraulic parameters to use for the plot.
 
     Returns:
         None
     """
+    unit = "ft/s" if hydraulic_parameters == "velocity" else "ft"
     lf_residual = np.sort(np.abs(lf - hf).flatten())
     upskill_residual = np.sort(np.abs(lf_upskill - hf).flatten())
     pcts = np.linspace(0, 100, len(lf_residual))
@@ -210,7 +226,7 @@ def performance_cdf(lf: NDArray[Any], hf: NDArray[Any], lf_upskill: NDArray[Any]
     ax.plot(lf_residual, pcts, label="Low-Fidelity Model", c=COMMON_COLORS[0])
     ax.plot(upskill_residual, pcts, label="Upskilled Model", c=COMMON_COLORS[1])
     ax.set_ylabel("Percent of Cells")
-    ax.set_xlabel("Absolute Error Less Than (ft)")
+    ax.set_xlabel(f"Absolute Error Less Than ({unit})")
     ax.legend()
     apply_formatting(fig, ax)
     fig.savefig(Path(out_path))
@@ -285,30 +301,53 @@ def appr_3_pairplot(x: pd.DataFrame, y: pd.DataFrame, out_dir: str | Path) -> No
 
 def ts_clipping(arr: NDArray[Any], cutoffs: tuple[int, int], out_path: str) -> None:
     """Plot changes in WSE/feature value across timesteps and visualize what's clipped out."""
+    # cutoffs = (cutoffs[0] - 1, cutoffs[1])
     arr = arr[:, np.any(arr > 0, axis=0)]
-    dx_dt_max = np.quantile(arr, 0.99, axis=1)
+    # dx_dt_max = np.quantile(arr, 0.99, axis=1)
     dx_dt_ave = np.sum(arr, axis=1) / np.sum(arr)
     cum_dx_dt = np.cumsum(arr, axis=0)
-    cum_dx_dt_max = np.quantile(cum_dx_dt, 0.01, axis=1)
+    # cum_dx_dt_max = np.quantile(cum_dx_dt, 0.01, axis=1)
     cum_dx_dt_ave = np.sum(cum_dx_dt, axis=1) / cum_dx_dt.shape[1]
+    x1 = np.arange(len(arr))
 
-    fig, axs = plt.subplots(nrows=2, figsize=(6.5, 4), sharex=True)
+    # Zoom in
+    rng = cutoffs[1] - cutoffs[0]
+    mult = int(rng / 10)
+    zc1 = cutoffs[0] - mult
+    zc2 = cutoffs[1] + mult
+    x2 = x1[zc1:zc2]
 
-    axs[0].plot(dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
-    axs[0].plot(dx_dt_ave, c="k", label="average")
-    axs[1].plot(cum_dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
-    axs[1].plot(cum_dx_dt_ave, c="k", label="average")
-    axs[0].axvline(cutoffs[0], ls="dashed", c="r")
-    axs[1].axvline(cutoffs[0], ls="dashed", c="r")
-    axs[0].axvline(cutoffs[1], ls="dashed", c="r")
+    fig, axs = plt.subplots(nrows=3, figsize=(6.5, 6.5))
+
+    # axs[0].plot(dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
+    axs[0].plot(x1, dx_dt_ave, c="k")
+    # axs[1].plot(cum_dx_dt_max, c="k", alpha=0.5, lw=1, label="99th percentile")
+    axs[1].plot(x2, dx_dt_ave[zc1:zc2], c="k")
+    axs[2].plot(x2, cum_dx_dt_ave[zc1:zc2], c="k")
+    axs[1].axvline(cutoffs[0], ls="dashed", c="r", label="cutoffs")
+    axs[2].axvline(cutoffs[0], ls="dashed", c="r")
     axs[1].axvline(cutoffs[1], ls="dashed", c="r")
+    axs[2].axvline(cutoffs[1], ls="dashed", c="r")
 
-    axs[1].set_xlabel("Timestep Index")
+    axs[2].set_xlabel("Timestep Index")
     axs[0].set_ylabel("dx/dt")
-    axs[1].set_ylabel("CDF of dx/dt")
+    axs[1].set_ylabel("dx/dt")
+    axs[2].set_ylabel("CDF of dx/dt")
+
+    for ax, title in zip(axs, ["Full Simulation", "Zoomed In", "Zoomed In"], strict=False):
+        ax.text(
+            0.95,
+            0.15,
+            title,
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            path_effects=[pe.withStroke(linewidth=5, foreground="white")],
+            size=11,
+        )
     fig.suptitle("Changes in Cell/Feature Values")
 
-    axs[1].legend()
+    fig.legend(loc="upper right")
     apply_formatting(fig, axs)
     fig.savefig(out_path)
     plt.close(fig)
@@ -536,13 +575,46 @@ def summary_plots(
             df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
             for metrics_field, metrics_label in metrics[table].items():
                 fig, ax = plt.subplots(figsize=(6.5, 4))
+
                 if len(df) == len(events):
                     sorted_events = events.copy()
                     sorted_events.sort()
-                    ax.scatter(sorted_events, df.sort_values(by="event")[metrics_field])
-                    ax.grid()
+
+                    # Ensure no masked, NaN, or infinite values are passed to scatter plot
+                    y_values = df.sort_values(by="event")[metrics_field]
+                    if isinstance(y_values, np.ma.MaskedArray):
+                        y_values = y_values.data.copy()
+                        y_values[y_values.mask] = np.nan
+
+                    # Convert to numeric and handle non-numeric values
+                    y_values = pd.to_numeric(y_values, errors="coerce")  # Convert non-numeric to NaN
+
+                    # Create a mask for valid values
+                    valid_mask = np.isfinite(y_values)  # Removes NaN, -inf, and inf values
+                    y_values = y_values[valid_mask]
+                    sorted_events = np.array(sorted_events)[valid_mask]  # Apply the same mask to sorted_events
+
+                    # print(f"Scatter plot data (sorted_events): {sorted_events}")
+                    # print(f"Scatter plot data (y_values): {y_values}")
+
+                    if len(y_values) > 0:
+                        ax.scatter(sorted_events, y_values)
+                        ax.grid()
+                    else:
+                        continue
                 else:
-                    ax.boxplot([df[df["event"] == event][metrics_field] for event in events], labels=events)
+                    # Ensure no masked, NaN, or infinite values are passed to boxplot
+                    boxplot_data = [df[df["event"] == event][metrics_field] for event in events]
+                    boxplot_data = [
+                        pd.to_numeric(data, errors="coerce") if isinstance(data, pd.Series) else data
+                        for data in boxplot_data
+                    ]
+                    boxplot_data = [data[np.isfinite(data)] for data in boxplot_data]  # Remove -inf and inf values
+
+                    # print(f"Boxplot data: {boxplot_data}")
+
+                    ax.boxplot(boxplot_data, labels=events)
+
                 plt.xticks(rotation=45)
                 ax.set_ylabel(metrics_label)
                 ax.set_title(f"{metrics_label} for Testing Dataset")
@@ -785,3 +857,39 @@ def map_detection_categories(
         apply_formatting(fig, ax)
         fig.savefig(Path(output_plot_path) / f"detection_{event}.png")
         plt.close(fig)
+
+
+def plot_rating_curve(
+    x_src: NDArray[Any],
+    y_src: NDArray[Any],
+    x_fit: NDArray[Any],
+    y_fit: NDArray[Any],
+    out_path: str | Path,
+    title: str | None = None,
+) -> None:
+    """Plot a fitted stage-discharge rating curve."""
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    ax.scatter(x_src, y_src, s=1, alpha=0.6, c="k", label="observations")
+    ax.plot(x_fit, y_fit, c="b", label="Fitted Rating Curve", alpha=0.8)
+    ax.set_ylabel("Water Surface Elevation (ft)")
+    ax.set_xlabel("Discharge (cfs)")
+    if title:
+        fig.suptitle(title)
+    ax.legend()
+    apply_formatting(fig, ax)
+    fig.savefig(out_path)
+    plt.close(fig)
+
+
+def plot_centerline_interpolater(station: NDArray[Any], wse: NDArray[Any], out_path: str | Path) -> None:
+    """Plot median drop over stream centerline by station."""
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    pct = 100 * wse
+    ax.scatter(station, pct, s=2, alpha=0.6, ec="k", fc="none", label="median")
+    ax.set_xlabel("Distance Along Centerline (ft)")
+    ax.set_ylabel("Percent Drop in Water Surface Elevation")
+    buff = pct.max() * 0.05
+    ax.set_ylim((pct.max() + buff, pct.min() - buff))
+    apply_formatting(fig, ax)
+    fig.savefig(out_path)
+    plt.close(fig)

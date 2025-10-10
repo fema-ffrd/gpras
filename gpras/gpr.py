@@ -109,7 +109,7 @@ def _optimize_multi_start(model: SGPR, n_starts: int = 40, iter_initial: int = 2
     _optimize_bfgs(model, iter_final)
 
 
-def _optimize_two_stage(model: SGPR, max_iter: int = 100) -> None:
+def _optimize_two_stage(model: SGPR, max_iter: int = 100) -> Any:
     """Use Adam algorithm to optimize any trainable model parameters but optimizing inducing points first."""
     # Optimize inducing points
     gpflow.set_trainable(model, False)
@@ -123,6 +123,8 @@ def _optimize_two_stage(model: SGPR, max_iter: int = 100) -> None:
 
     # Cleanup
     gpflow.set_trainable(model.inducing_variable.Z, True)
+
+    return model.training_loss()
 
 
 def _optimize_three_stage(model: SGPR, max_iter: int = 100) -> None:
@@ -154,8 +156,21 @@ def _optimize_adam(model: SGPR, max_iter: int) -> None:
         opt.apply_gradients(zip(grads, model.trainable_variables, strict=False))
         return loss
 
+    losses = []
+    best = np.inf
+    count = 0
+    tol = 10e-6
+    patience = 50
     for _ in range(max_iter):
-        step()
+        loss = step()
+        losses.append(loss)
+        if ((best - loss) / abs(loss)) > tol:
+            best = loss
+            count = 0
+        else:
+            count += 1
+            if count > patience:
+                break
 
 
 def _optimize_adadelta(model: SGPR, max_iter: int) -> tf.Tensor:
@@ -255,8 +270,9 @@ class GPRAS:
 
         # Optimize hyperparameters
         opt = OPTIMIZERS[optimization_method]
-        for i in self.models:
+        for _, i in enumerate(self.models):
             opt(i, **opt_kwargs)
+            # enumerate for optional status logging in the future.
 
     def _init_models(
         self,

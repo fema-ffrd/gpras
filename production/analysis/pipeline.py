@@ -9,6 +9,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from scipy.stats import norm
 
 from gpras.gpr import GPRAS
 from gpras.metrics import export_metric_summary
@@ -49,43 +50,39 @@ def get_data_extracter(
     return config.data_reader(db_path)
 
 
-def get_hf_pre_processor(
-    config: Config, data: pd.DataFrame, extracter: DataBuilder | RasReader, save: bool
-) -> PreProcessor:
+def get_hf_pre_processor(config: Config, data: pd.DataFrame, extracter: DataBuilder | RasReader) -> PreProcessor:
     """Get a HEC-RAS preprocessor for the config and create one if necessary."""
     if not (config.hf_preprocessor_path).exists():
         reducer = PreProcessor(wet_threshold=config.wet_threshold_depth, hydraulic_parameter=config.hydraulic_parameter)
         reducer.fit(data.values, extracter.cell_elevations, extracter.cell_areas, config.spatial_mode_count)
-        if save:
-            reducer.to_file(config.hf_preprocessor_path)
+        reducer.to_file(config.hf_preprocessor_path)
     else:
         reducer = PreProcessor.from_file(config.hf_preprocessor_path)
     return reducer
 
 
-def get_hms_preprocessor(config: Config, data: pd.DataFrame, save: bool) -> HmsPreProcessor:
+def get_hms_preprocessor(config: Config, data: pd.DataFrame) -> HmsPreProcessor:
     """Get a HEC-HMS preprocessor for the config and create one if necessary."""
     if not (config.lf_preprocessor_path).exists():
         reducer = HmsPreProcessor()
         precip_mask = np.array([i.startswith("precip_") for i in data.columns])
         bc_mask = ~precip_mask
         reducer.fit(data.values, bc_mask, precip_mask, config.precip_spatial_mode_count)
-        if save:
-            reducer.to_file(config.lf_preprocessor_path)
+        reducer.to_file(config.lf_preprocessor_path)
     else:
         reducer = HmsPreProcessor.from_file(config.lf_preprocessor_path)
     return reducer
 
 
 def get_pre_processors(
-    config: Config, hf_data: pd.DataFrame, lf_data: pd.DataFrame, extracter: DataBuilder | RasReader, save: bool
+    config: Config, hf_data: pd.DataFrame, lf_data: pd.DataFrame, extracter: DataBuilder | RasReader
 ) -> tuple[PreProcessor, PreProcessor | HmsPreProcessor]:
     """Get lf and hf data preprocessors."""
-    hf_preprocessor = get_hf_pre_processor(config, hf_data, extracter, save)
-    if config.lf_model_type in ["ras_upskill", "pseudo_surface"]:
+    hf_preprocessor = get_hf_pre_processor(config, hf_data, extracter)
+    if config.lf_model_type in ["ras_upskill", "pseudo_surface", "ras_interpolate"]:
         return hf_preprocessor, hf_preprocessor
     elif config.lf_model_type == "hms_upskill":
-        return hf_preprocessor, get_hms_preprocessor(config, lf_data, save)
+        return hf_preprocessor, get_hms_preprocessor(config, lf_data)
     else:
         raise RuntimeError(f"No preprocessor setup available for LF model type: {config.lf_model_type}")
 
@@ -121,26 +118,29 @@ def gen_plots(
     ec_pairplot(x, y, min(config.spatial_mode_count, 5), config.plot_dir / "pairplot.png")
     # ec_timeseries(x, y, min(config.spatial_mode_count, 5), hf_data_df.index, config.plot_dir / "ec_timeseries")
     # ec_timeseries_alt(x, y, 5, hf_data_df.index, ["u/s bc", "p1", "p2", "p3", "p4", "p5", "api1", "api2"], config.plot_dir / "ec_timeseries")
-    performance_scatterplot(
-        lf_test_data_df.values,
-        hf_test_data_df.values,
-        y_test_pred,
-        config.plot_dir / "performance_scatterplot.png",
-    )
-    performance_cdf(
-        lf_test_data_df.values,
-        hf_test_data_df.values,
-        y_test_pred,
-        config.plot_dir / "performance_cdf.png",
-    )
-    ec_pairplot(mean_pred, y_test, min(config.spatial_mode_count, 5), config.plot_dir / "pairplot_test_predicted.png")
-    performance_scatterplot(
-        lf_test_data_depth,
-        hf_test_data_depth,
-        y_test_pred_depth,
-        config.plot_dir / "performance_scatterplot_depth.png",
-        depth=True,
-    )
+    if config.lf_model_type == "ras_upskill":
+        performance_scatterplot(
+            lf_test_data_df.values,
+            hf_test_data_df.values,
+            y_test_pred,
+            config.plot_dir / "performance_scatterplot.png",
+        )
+        performance_cdf(
+            lf_test_data_df.values,
+            hf_test_data_df.values,
+            y_test_pred,
+            config.plot_dir / "performance_cdf.png",
+        )
+        ec_pairplot(
+            mean_pred, y_test, min(config.spatial_mode_count, 5), config.plot_dir / "pairplot_test_predicted.png"
+        )
+        performance_scatterplot(
+            lf_test_data_depth,
+            hf_test_data_depth,
+            y_test_pred_depth,
+            config.plot_dir / "performance_scatterplot_depth.png",
+            depth=True,
+        )
     map_mesh_errors(
         hf_mesh,
         config.metric_dir / "performance_metrics.db",
@@ -232,7 +232,7 @@ def pipeline(config: Config) -> None:
     ### Preprocess data ###
     t2 = time.perf_counter()
     print("Preprocessing data")
-    hf_reducer, lf_reducer = get_pre_processors(config, hf_data_df, lf_data_df, extracter, config.save_preprocessor)
+    hf_reducer, lf_reducer = get_pre_processors(config, hf_data_df, lf_data_df, extracter)
     y = hf_reducer.transform(hf_data)
     x = lf_reducer.transform(lf_data)
     y_test = hf_reducer.transform(hf_test_data)
@@ -241,27 +241,41 @@ def pipeline(config: Config) -> None:
     ### Fit GPR ###
     t3 = time.perf_counter()
     print("Fitting GPR")
-    # gpr = GPRAS.from_file(config.model_path)
-    gpr = GPRAS(config.kernel)
-    gpr.fit(
-        x, y, config.inducing_pt_count, config.induction_pt_initializer, config.optimizer, **config.optimizer_kwargs
-    )
-    gpr.to_file(config.model_path)
+    if True:  # Manually set to train or load
+        gpr = GPRAS(config.kernel)
+        gpr.fit(
+            x,
+            y,
+            config.inducing_pt_count,
+            config.induction_pt_initializer,
+            config.optimizer,
+            **config.optimizer_kwargs,  #
+        )
+        gpr.to_file(config.model_path)
+    gpr = GPRAS.from_file(config.model_path)
 
     ### Predict test data ###
     t4 = time.perf_counter()
     print("Making predictions")
-    mean_pred, _ = gpr.predict(x_test)
-    y_test_pred = hf_reducer.reverse_transform(mean_pred)
-    if config.hydraulic_parameter == "depth":
-        y_test_pred += hf_reducer.elevations
-    lf_test_data_depth = (
-        hf_reducer.wse_2_depth(lf_test_data)
-        if config.lf_model_type in ["ras_upskill", "pseudo_surface"]
-        else lf_test_data
-    )
-    hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
-    y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
+    mean_pred, var_pred = gpr.predict(x_test)
+    y_test_pred, y_test_var = hf_reducer.reverse_transform(mean_pred, var_pred)
+    _ = y_test_pred + (norm.ppf(0.975) * np.sqrt(y_test_var))  # High est
+    _ = y_test_pred + (norm.ppf(0.025) * np.sqrt(y_test_var))  # Low est
+
+    if config.hydraulic_parameter != "velocity":
+        if config.hydraulic_parameter == "depth":
+            y_test_pred += hf_reducer.elevations
+        lf_test_data_depth = (
+            hf_reducer.wse_2_depth(lf_test_data)
+            if config.lf_model_type in ["ras_upskill", "pseudo_surface", "ras_interpolate"]
+            else lf_test_data
+        )
+        hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
+        y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
+    else:
+        hf_test_data_depth = hf_test_data
+        y_test_pred_depth = y_test_pred
+        lf_test_data_depth = lf_test_data
 
     ### Assess performance and plot diagnostics ###
     t5 = time.perf_counter()
@@ -269,6 +283,7 @@ def pipeline(config: Config) -> None:
     export_metric_summary(
         pd.DataFrame(hf_test_data_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         pd.DataFrame(y_test_pred_depth, index=hf_test_data_df.index, columns=hf_test_data_df.columns),
+        pd.DataFrame(np.sqrt(y_test_var), index=hf_test_data_df.index, columns=hf_test_data_df.columns),
         config.metric_db_path,
     )
     with open(config.timer_path, mode="w") as f:
@@ -278,6 +293,10 @@ def pipeline(config: Config) -> None:
             indent=4,
         )
     if config.generate_plots:
+        if config.hydraulic_parameter == "velocity":
+            wet_cell_ids = extracter.hf_geometry_aoi[config.cell_id_field].tolist()
+        else:
+            wet_cell_ids = extracter.hf_geometry_aoi[config.cell_id_field][~hf_reducer.dry_indices].tolist()
         gen_plots(
             config,
             gpr,
@@ -295,74 +314,10 @@ def pipeline(config: Config) -> None:
             hf_test_data_depth,
             y_test_pred_depth,
             hf_reducer.eofs,
-            extracter.hf_geometry_aoi[config.cell_id_field][~hf_reducer.dry_indices].tolist(),
+            wet_cell_ids,
         )
 
 
-def gen_plots_post_hoc(config: Config) -> None:
-    """Generate plots on a pre-trained model."""
-    ### Load data ###
-    print("Loading data")
-    extracter = get_data_extracter(
-        config, config.train_plans, config.training_data_db, config.save_dbs, config.generate_plots
-    )
-    hf_data_df, lf_data_df = extracter.aligned_datasets
-    hf_data = hf_data_df.values
-    lf_data = lf_data_df.values
-
-    test_extracter = get_data_extracter(
-        config, config.test_plans, config.testing_data_db, config.save_dbs, config.generate_plots
-    )
-    hf_test_data_df, lf_test_data_df = test_extracter.aligned_datasets
-    hf_test_data = hf_test_data_df.values
-    lf_test_data = lf_test_data_df.values
-
-    ### Preprocess data ###
-    print("Preprocessing data")
-    hf_reducer, lf_reducer = get_pre_processors(config, hf_data_df, lf_data_df, extracter, config.save_preprocessor)
-    y = hf_reducer.transform(hf_data)
-    x = lf_reducer.transform(lf_data)
-    y_test = hf_reducer.transform(hf_test_data)
-    x_test = lf_reducer.transform(lf_test_data)
-
-    ### Load GPR ###
-    print("Loading GPR")
-    gpr = GPRAS.from_file(config.model_path)
-
-    ### Predict test data ###
-    print("Making predictions")
-    mean_pred, _ = gpr.predict(x_test)
-    y_test_pred = hf_reducer.reverse_transform(mean_pred)
-    if config.hydraulic_parameter == "depth":
-        y_test_pred += hf_reducer.elevations
-    lf_test_data_depth = hf_reducer.wse_2_depth(lf_test_data) if config.lf_model_type == "ras_upskill" else lf_test_data
-    hf_test_data_depth = hf_reducer.wse_2_depth(hf_test_data)
-    y_test_pred_depth = hf_reducer.wse_2_depth(y_test_pred)
-
-    ### Assess performance and plot diagnostics ###
-    print("Making performance plots")
-    gen_plots(
-        config,
-        gpr,
-        extracter.hf_geometry_aoi,
-        x,
-        y,
-        x_test,
-        y_test,
-        hf_data_df,
-        lf_test_data_df,
-        hf_test_data_df,
-        y_test_pred,
-        mean_pred,
-        lf_test_data_depth,
-        hf_test_data_depth,
-        y_test_pred_depth,
-        hf_reducer.eofs,
-        extracter.hf_geometry_aoi[config.cell_id_field][~hf_reducer.dry_indices].tolist(),
-    )
-
-
 if __name__ == "__main__":
-    config = Config.from_file("data/pseudo_surface/pipeline.config.json")
+    config = Config.from_file("data/test/pipeline.config.json")
     pipeline(config)
-    # gen_plots_post_hoc(config)
