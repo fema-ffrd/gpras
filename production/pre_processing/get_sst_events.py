@@ -20,8 +20,7 @@ def get_sst_events(
     upstream_site: str,
     s3_client: boto3.client,
 ) -> pd.DataFrame | None:
-    """
-    Download and extract time series data from SST DSS file for a given event.
+    """Download and extract time series data from SST DSS file for a given event.
 
     Extracts:
         - 'PRECIP-CUM' and 'PRECIP-EXCESS' for the target site
@@ -61,20 +60,14 @@ def get_sst_events(
         dfs = []
         for label, (site, part_c) in variables.items():
             match = next(
-                (
-                    p
-                    for p in paths
-                    if site.lower() in p.lower() and part_c.lower() in p.lower()
-                ),
+                (p for p in paths if site.lower() in p.lower() and part_c.lower() in p.lower()),
                 None,
             )
             if not match:
                 continue
 
             record = dss.get(match)
-            df = pd.DataFrame(
-                {label: record.values}, index=pd.to_datetime(record.times)
-            )
+            df = pd.DataFrame({label: record.values}, index=pd.to_datetime(record.times))
             dfs.append(df)
 
         if not dfs:
@@ -119,27 +112,17 @@ if __name__ == "__main__":
     results: list[pd.DataFrame] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(
-                get_sst_events, eid, bucket, base_prefix, target_site, upstream_site, s3
-            ): eid
+            executor.submit(get_sst_events, eid, bucket, base_prefix, target_site, upstream_site, s3): eid
             for eid in event_ids
         }
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="Processing events"
-        ):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing events"):
             df = future.result()
             if df is not None:
                 results.append(df)
 
     if results:
-        combined_df = (
-            pd.concat(results, axis=0)
-            .reset_index()
-            .rename(columns={"index": "datetime"})
-        )
-        combined_df = combined_df[
-            ["event_id", "datetime", "inflow", "precip-cum", "precip-excess"]
-        ]
+        combined_df = pd.concat(results, axis=0).reset_index().rename(columns={"index": "datetime"})
+        combined_df = combined_df[["event_id", "datetime", "inflow", "precip-cum", "precip-excess"]]
         combined_df = combined_df.sort_values(["event_id", "datetime"])
         combined_df.to_parquet(output_file)
         print(f"Saved output to {output_file}")
