@@ -31,7 +31,6 @@ jobs:
         python-version: 3.12
     - name: Install Dependencies
       run: |
-        pip install "numpy>=2.0.0" "matplotlib>=3.8.0"
         pip install .[dev]
     - name: Run mypy
       run: |
