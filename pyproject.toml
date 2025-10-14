@@ -19,7 +19,7 @@ dependencies = [
   "hecstac",
   "scikit-learn",
   "chardet",
-  "seaborn"
+  "seaborn",
 ]
 
 [project.optional-dependencies]
