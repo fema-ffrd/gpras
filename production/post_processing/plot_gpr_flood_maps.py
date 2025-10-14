@@ -40,7 +40,7 @@ for event_id in event_id_list:
     print(f"Plotting event id {event_id}")
     gpr = "gpr" + str(event_id)
     show_plots = 1
-    plot_animation = False
+    plot_animation = True
     save_event_gdf = False
 
     # define paths
@@ -328,7 +328,7 @@ for event_id in event_id_list:
         ax.text(coord_x, coord_y, list_cell_labels[i])
         ax.plot(coord_x, coord_y, "o", color="r")
     plt.suptitle("Location of Select Cells for Plotting")
-    plt.savefig(os.path.join(path_plots, filename_ts_pts_map))
+    plt.savefig(os.path.join(path_plots, filename_ts_pts_map), dpi=300)
 
     #
     list_ts = np.arange(N_ts)
