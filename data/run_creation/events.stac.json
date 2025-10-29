@@ -1,0 +1,750 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "id": "GPR_SST_Events",
+  "geometry": null,
+  "bbox": null,
+  "properties": {
+    "datetime": null,
+    "train_event_count": 35,
+    "test_event_count": 14
+  },
+  "links": [],
+  "assets": {
+    "9373": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/9373/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 9373,
+      "properties": {
+        "Set": "Max",
+        "avg_precip_in": 14.05,
+        "peak_inflow_cfs": 21719.18,
+        "recurrence_interval_precip": 2001.0,
+        "recurrence_interval_inflow": 500.25
+      }
+    },
+    "15465": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/15465/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 15465,
+      "properties": {
+        "Set": "Max",
+        "avg_precip_in": 12.42,
+        "peak_inflow_cfs": 36126.17,
+        "recurrence_interval_precip": 1000.5,
+        "recurrence_interval_inflow": 2001.0
+      }
+    },
+    "144": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/144/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 144,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 4.06,
+        "peak_inflow_cfs": 51.11,
+        "recurrence_interval_precip": 1.96,
+        "recurrence_interval_inflow": 1.98
+      }
+    },
+    "18445": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/18445/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 18445,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 4.35,
+        "peak_inflow_cfs": 157.99,
+        "recurrence_interval_precip": 2.31,
+        "recurrence_interval_inflow": 2.14
+      }
+    },
+    "11654": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/11654/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 11654,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 5.68,
+        "peak_inflow_cfs": 2812.96,
+        "recurrence_interval_precip": 4.86,
+        "recurrence_interval_inflow": 4.91
+      }
+    },
+    "14407": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/14407/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 14407,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 5.96,
+        "peak_inflow_cfs": 2775.46,
+        "recurrence_interval_precip": 5.8,
+        "recurrence_interval_inflow": 4.87
+      }
+    },
+    "17855": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/17855/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 17855,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 7.05,
+        "peak_inflow_cfs": 5198.09,
+        "recurrence_interval_precip": 10.37,
+        "recurrence_interval_inflow": 10.26
+      }
+    },
+    "6264": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/6264/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 6264,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 7.17,
+        "peak_inflow_cfs": 4655.93,
+        "recurrence_interval_precip": 10.89,
+        "recurrence_interval_inflow": 8.48
+      }
+    },
+    "1641": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/1641/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 1641,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 8.05,
+        "peak_inflow_cfs": 8210.51,
+        "recurrence_interval_precip": 21.75,
+        "recurrence_interval_inflow": 25.65
+      }
+    },
+    "11083": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/11083/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 11083,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 8.27,
+        "peak_inflow_cfs": 8437.11,
+        "recurrence_interval_precip": 26.68,
+        "recurrence_interval_inflow": 29.0
+      }
+    },
+    "10320": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/10320/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 10320,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 8.83,
+        "peak_inflow_cfs": 10286.24,
+        "recurrence_interval_precip": 47.64,
+        "recurrence_interval_inflow": 57.17
+      }
+    },
+    "4119": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/4119/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 4119,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 8.52,
+        "peak_inflow_cfs": 9918.98,
+        "recurrence_interval_precip": 35.73,
+        "recurrence_interval_inflow": 45.48
+      }
+    },
+    "9109": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/9109/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 9109,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 9.58,
+        "peak_inflow_cfs": 12369.18,
+        "recurrence_interval_precip": 117.71,
+        "recurrence_interval_inflow": 105.32
+      }
+    },
+    "17718": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/17718/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 17718,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 8.78,
+        "peak_inflow_cfs": 11794.79,
+        "recurrence_interval_precip": 44.47,
+        "recurrence_interval_inflow": 95.29
+      }
+    },
+    "6913": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/6913/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 6913,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 10.23,
+        "peak_inflow_cfs": 9951.4,
+        "recurrence_interval_precip": 200.1,
+        "recurrence_interval_inflow": 46.53
+      }
+    },
+    "7783": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/7783/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 7783,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 9.05,
+        "peak_inflow_cfs": 16801.65,
+        "recurrence_interval_precip": 60.64,
+        "recurrence_interval_inflow": 222.33
+      }
+    },
+    "4619": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/4619/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 4619,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 11.29,
+        "peak_inflow_cfs": 24258.39,
+        "recurrence_interval_precip": 400.2,
+        "recurrence_interval_inflow": 667.0
+      }
+    },
+    "10741": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/10741/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 10741,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 12.28,
+        "peak_inflow_cfs": 20213.22,
+        "recurrence_interval_precip": 667.0,
+        "recurrence_interval_inflow": 400.2
+      }
+    },
+    "860": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/860/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 860,
+      "properties": {
+        "Set": "AEP",
+        "avg_precip_in": 8.97,
+        "peak_inflow_cfs": 30991.15,
+        "recurrence_interval_precip": 55.58,
+        "recurrence_interval_inflow": 1000.5
+      }
+    },
+    "885": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/885/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 885,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 3.48,
+        "peak_inflow_cfs": 7616.63,
+        "recurrence_interval_precip": 1.51,
+        "recurrence_interval_inflow": 21.29
+      }
+    },
+    "2867": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/2867/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 2867,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 6.18,
+        "peak_inflow_cfs": 8145.96,
+        "recurrence_interval_precip": 6.43,
+        "recurrence_interval_inflow": 24.7
+      }
+    },
+    "3348": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/3348/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 3348,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 8.18,
+        "peak_inflow_cfs": 6024.33,
+        "recurrence_interval_precip": 23.54,
+        "recurrence_interval_inflow": 13.8
+      }
+    },
+    "3425": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/3425/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 3425,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 4.21,
+        "peak_inflow_cfs": 9332.44,
+        "recurrence_interval_precip": 2.14,
+        "recurrence_interval_inflow": 38.48
+      }
+    },
+    "5016": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/5016/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 5016,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 8.04,
+        "peak_inflow_cfs": 1334.73,
+        "recurrence_interval_precip": 21.52,
+        "recurrence_interval_inflow": 3.22
+      }
+    },
+    "8643": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/8643/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 8643,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 5.47,
+        "peak_inflow_cfs": 13165.69,
+        "recurrence_interval_precip": 4.29,
+        "recurrence_interval_inflow": 117.71
+      }
+    },
+    "9203": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/9203/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 9203,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 7.63,
+        "peak_inflow_cfs": 19619.08,
+        "recurrence_interval_precip": 15.05,
+        "recurrence_interval_inflow": 333.5
+      }
+    },
+    "10339": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/10339/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 10339,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 6.8,
+        "peak_inflow_cfs": 11772.58,
+        "recurrence_interval_precip": 8.89,
+        "recurrence_interval_inflow": 90.95
+      }
+    },
+    "11644": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/11644/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 11644,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 8.69,
+        "peak_inflow_cfs": 10141.95,
+        "recurrence_interval_precip": 41.69,
+        "recurrence_interval_inflow": 52.66
+      }
+    },
+    "12085": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/12085/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 12085,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 5.19,
+        "peak_inflow_cfs": 2460.56,
+        "recurrence_interval_precip": 3.69,
+        "recurrence_interval_inflow": 4.46
+      }
+    },
+    "13050": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/13050/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 13050,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 7.03,
+        "peak_inflow_cfs": 1902.08,
+        "recurrence_interval_precip": 10.26,
+        "recurrence_interval_inflow": 3.89
+      }
+    },
+    "13081": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/13081/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 13081,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 7.21,
+        "peak_inflow_cfs": 12727.14,
+        "recurrence_interval_precip": 11.18,
+        "recurrence_interval_inflow": 111.17
+      }
+    },
+    "15592": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/15592/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 15592,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 6.69,
+        "peak_inflow_cfs": 2445.61,
+        "recurrence_interval_precip": 8.55,
+        "recurrence_interval_inflow": 4.45
+      }
+    },
+    "16308": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/16308/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 16308,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 9.03,
+        "peak_inflow_cfs": 2797.65,
+        "recurrence_interval_precip": 58.85,
+        "recurrence_interval_inflow": 4.89
+      }
+    },
+    "17310": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/17310/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 17310,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 5.46,
+        "peak_inflow_cfs": 15200.14,
+        "recurrence_interval_precip": 4.2,
+        "recurrence_interval_inflow": 166.75
+      }
+    },
+    "19567": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/19567/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Train"
+      ],
+      "event_id": 19567,
+      "properties": {
+        "Set": "Diverse",
+        "avg_precip_in": 4.99,
+        "peak_inflow_cfs": 513.1,
+        "recurrence_interval_precip": 3.26,
+        "recurrence_interval_inflow": 2.53
+      }
+    },
+    "456": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/456/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 456,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 6.56,
+        "peak_inflow_cfs": 11369.7,
+        "recurrence_interval_precip": 8.0,
+        "recurrence_interval_inflow": 80.04
+      }
+    },
+    "2410": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/2410/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 2410,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 9.28,
+        "peak_inflow_cfs": 9455.29,
+        "recurrence_interval_precip": 90.95,
+        "recurrence_interval_inflow": 40.84
+      }
+    },
+    "3405": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/3405/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 3405,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 9.47,
+        "peak_inflow_cfs": 15176.53,
+        "recurrence_interval_precip": 111.17,
+        "recurrence_interval_inflow": 153.92
+      }
+    },
+    "4731": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/4731/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 4731,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 5.35,
+        "peak_inflow_cfs": 1861.34,
+        "recurrence_interval_precip": 4.02,
+        "recurrence_interval_inflow": 3.86
+      }
+    },
+    "5855": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/5855/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 5855,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 11.17,
+        "peak_inflow_cfs": 17446.13,
+        "recurrence_interval_precip": 333.5,
+        "recurrence_interval_inflow": 285.86
+      }
+    },
+    "7165": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/7165/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 7165,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 5.16,
+        "peak_inflow_cfs": 2985.71,
+        "recurrence_interval_precip": 3.64,
+        "recurrence_interval_inflow": 5.14
+      }
+    },
+    "8897": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/8897/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 8897,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 6.68,
+        "peak_inflow_cfs": 1950.25,
+        "recurrence_interval_precip": 8.48,
+        "recurrence_interval_inflow": 3.92
+      }
+    },
+    "9040": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/9040/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 9040,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 6.94,
+        "peak_inflow_cfs": 5032.09,
+        "recurrence_interval_precip": 9.62,
+        "recurrence_interval_inflow": 9.69
+      }
+    },
+    "11576": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/11576/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 11576,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 10.01,
+        "peak_inflow_cfs": 5831.51,
+        "recurrence_interval_precip": 166.75,
+        "recurrence_interval_inflow": 12.51
+      }
+    },
+    "11668": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/11668/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 11668,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 5.63,
+        "peak_inflow_cfs": 977.72,
+        "recurrence_interval_precip": 4.68,
+        "recurrence_interval_inflow": 2.9
+      }
+    },
+    "15072": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/15072/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 15072,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 6.69,
+        "peak_inflow_cfs": 610.78,
+        "recurrence_interval_precip": 8.55,
+        "recurrence_interval_inflow": 2.61
+      }
+    },
+    "16790": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/16790/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 16790,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 7.93,
+        "peak_inflow_cfs": 5441.6,
+        "recurrence_interval_precip": 19.06,
+        "recurrence_interval_inflow": 11.18
+      }
+    },
+    "18417": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/18417/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 18417,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 5.38,
+        "peak_inflow_cfs": 5214.7,
+        "recurrence_interval_precip": 4.06,
+        "recurrence_interval_inflow": 10.31
+      }
+    },
+    "19225": {
+      "href": "s3://trinity-pilot/conformance/simulations/event-data/19225/hydrology/SST.dss",
+      "type": "application/x.hec-dss",
+      "roles": [
+        "Test"
+      ],
+      "event_id": 19225,
+      "properties": {
+        "Set": "Test",
+        "avg_precip_in": 11.4,
+        "peak_inflow_cfs": 8026.67,
+        "recurrence_interval_precip": 500.25,
+        "recurrence_interval_inflow": 23.27
+      }
+    }
+  }
+}

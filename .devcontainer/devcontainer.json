@@ -1,0 +1,52 @@
+{
+    "name": "gpras-devcontainer",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "context": "..",
+        "target": "dev"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff",
+                "esbenp.prettier-vscode",
+                "ms-python.black-formatter",
+                "yy0931.vscode-sqlite3-editor",
+                "ms-azuretools.vscode-docker",
+                "ms-toolsai.jupyter"
+            ],
+            "settings": {
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.black-formatter",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.organizeImports": "explicit",
+                        "source.fixAll": "explicit"
+                    }
+                },
+                "editor.rulers": [
+                    120
+                ]
+            },
+            "ruff.importStrategy": "fromEnvironment",
+            "ruff.lint.enable": true,
+            "ruff.showSyntaxErrors": true
+        }
+    },
+    "remoteEnv": {
+        "PYTHONPATH": "/workspaces/gpras"
+    },
+    // avoid dubious ownership of the workspace folder https://www.kenmuse.com/blog/avoiding-dubious-ownership-in-dev-containers/
+    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "postCreateCommand": "pre-commit install",
+    // "initializeCommand": "bash .devcontainer/ensure-env.sh",
+    "runArgs": [
+        "--env-file",
+        ".devcontainer/.env.active"
+    ],
+	"mounts": [
+	    "source=E:\\Projects\\FFRD_GPR_Project\\data,target=/workspaces/gpras/data,type=bind,consistency=cached"
+    ]
+}

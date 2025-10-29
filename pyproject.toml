@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpras"
+dynamic = ["version"]
+description = "Gaussian process emulation of USACE HEC-RAS"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name = "Scott Lawson", email = "klawson@dewberry.com" },
+  { name = "Ricky Passarelli", email = "Richard.Passarelli@atkinsrealis.com" },
+  { name = "Rosemary Cyriac", email = "Rosemary.Cyriac@atkinsrealis.com" },
+]
+dependencies = [
+  "gpflow",
+  "rashdf",
+  "hecstac",
+  "scikit-learn",
+  "chardet",
+  "seaborn",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black[jupyter]",
+  "ruff",
+  "mypy",
+  "pre-commit",
+  "pytest",
+  "ipykernel",
+  "matplotlib"
+]
+
+[project.urls]
+Homepage = "https://github.com/fema-ffrd/gpras"
+
+[tool.black]
+line-length = 120
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+lint.select = ["E", "F", "I", "N", "D", "UP", "B", "C4", "SIM"]
+lint.ignore = ["E501", "D203", "D213"]  # ignore long lines if needed
+lint.pydocstyle.convention = "google"
+exclude = ["build", "dist", ".venv", "experiments"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = "experiments"
+
+[tool.setuptools.dynamic]
+version = {attr = "gpras.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gpras*"]
